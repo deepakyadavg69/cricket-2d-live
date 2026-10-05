@@ -1243,20 +1243,15 @@ class App:
             except NotImplementedError:
                 pass
 
-        await self.audio.warmup()
         app = self.make_app()
-
-        # playout buffer chalu karo (ab event loop chal raha hai)
-        self.playout.start()
-
-        # Telegram: webhook set karo aur malik ko khabar do
-        if self.bot.enabled:
-            asyncio.create_task(self._bot_startup())
-
         runner = web.AppRunner(app)
         await runner.setup()
         port = int(os.getenv("PORT") or self.args.port or self.cfg["server"].get("port", 8080))
         site = web.TCPSite(runner, self.cfg["server"].get("host", "0.0.0.0"), port)
+
+        # PORT SABSE PEHLE BIND — Render ka health-check (/api/health) turant
+        # pass ho jata hai. Pehle audio.warmup() await hota tha, jo edge-tts ke
+        # slow hone par health-check fail karwa deta tha -> deploy FAILED.
         await site.start()
         LOG.info("=" * 68)
         LOG.info("  LIVE CRICKET 2D ENGINE  ->  http://0.0.0.0:%d", port)
@@ -1264,6 +1259,24 @@ class App:
         LOG.info("  matches   : http://<host>:%d/api/matches", port)
         LOG.info("  health    : http://<host>:%d/api/health", port)
         LOG.info("=" * 68)
+
+        # playout buffer chalu karo (ab event loop chal raha hai)
+        self.playout.start()
+
+        # Baaki kaam background mein — server kabhi block na ho
+        async def _boot_bg():
+            try:
+                await asyncio.wait_for(self.audio.warmup(), timeout=90)
+            except asyncio.TimeoutError:
+                LOG.warning("Audio warmup slow — fallbacks use honge")
+            except Exception as exc:
+                LOG.warning("Audio warmup failed (%s) — fallbacks use honge", exc)
+            if self.bot.enabled:
+                try:
+                    await self._bot_startup()
+                except Exception as exc:
+                    LOG.warning("Telegram startup failed: %s", exc)
+        asyncio.create_task(_boot_bg())
 
         try:
             await self.live_loop()
