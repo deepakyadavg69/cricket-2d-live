@@ -1024,6 +1024,18 @@ class App:
     async def h_index(self, request):
         return web.FileResponse(os.path.join(OVERLAY_DIR, "index.html"))
 
+    async def h_preview(self, request):
+        """Layout guide — kahan kya dikhega, kis waqt kya hoga."""
+        for name in ("PREVIEW.html", os.path.join(OVERLAY_DIR, "PREVIEW.html")):
+            try:
+                with open(name, "r", encoding="utf-8") as f:
+                    return web.Response(text=f.read(), content_type="text/html")
+            except OSError:
+                continue
+        return web.Response(
+            text="<h1>PREVIEW.html nahi mila</h1><p>Repo root me hona chahiye.</p>",
+            content_type="text/html", status=404)
+
     async def h_admin(self, request):
         """Tiny mobile-friendly control page: pick a match, see backend status."""
         return web.Response(text=ADMIN_HTML, content_type="text/html")
@@ -1108,6 +1120,8 @@ class App:
         app.router.add_get("/index.html", self.h_index)
         app.router.add_get("/ws", self.h_ws)
         app.router.add_get("/admin", self.h_admin)
+        app.router.add_get("/preview", self.h_preview)
+        app.router.add_get("/PREVIEW.html", self.h_preview)
         app.router.add_get("/api/state", self.h_state)
         app.router.add_get("/api/health", self.h_health)
         app.router.add_get("/api/matches", self.h_matches)
