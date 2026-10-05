@@ -80,6 +80,8 @@ ENV_OVERRIDES = {
     "BRAND_TAGLINE": ("branding", "tagline", str),
     "FULL_TEAM_NAMES": ("privacy", "use_full_team_names", lambda v: str(v).lower() in ("1", "true", "yes", "on")),
     "GEMINI_API_KEY": ("commentary", "api_key_env", str),
+    "PLAYOUT_DELAY": ("playout", "delay_seconds", float),
+    "PLAYOUT_GAP":   ("playout", "min_gap_seconds", float),
 }
 
 
@@ -90,6 +92,7 @@ def load_config(path: str) -> dict:
         "commentary": {"enabled": False, "mode": "template", "provider": "gemini"},
         "overlay": {"viewer_base": 12000},
         "server": {"port": 8080, "host": "0.0.0.0"},
+        "playout": {"delay_seconds": 10.0, "min_gap_seconds": 2.2},
     }
     try:
         import yaml  # type: ignore
@@ -289,12 +292,12 @@ def overlay_state(snap: dict, st: "ServerState", hi: str = "", en: str = "") -> 
         "rrr": snap.get("rrr", 0.0),
         "need": snap.get("need", 0),
         "ballsLeft": snap.get("balls_left", 0),
-        "striker": _hi(dict(snap.get("striker", {}), num=jersey(snap.get("striker", {}).get("id", 0),
-                                                                snap.get("striker", {}).get("name", "")))),
-        "nonStriker": _hi(dict(snap.get("non_striker", {}), num=jersey(snap.get("non_striker", {}).get("id", 0),
-                                                                      snap.get("non_striker", {}).get("name", "")))),
-        "bowler": _hi(dict(snap.get("bowler", {}), balls=overs_to_balls(bowler_ov),
-                       num=jersey(snap.get("bowler", {}).get("id", 0), snap.get("bowler", {}).get("name", "")))),
+        # NOTE: jersey number jaan-bujh kar NAHI bhejte. Cricbuzz ye data deta
+        # hi nahi, aur nakli number banana galat jaankari dikhana hai —
+        # "sirf naam, koi number nahi" (user ki pasand).
+        "striker": _hi(snap.get("striker", {})),
+        "nonStriker": _hi(snap.get("non_striker", {})),
+        "bowler": _hi(dict(snap.get("bowler", {}), balls=overs_to_balls(bowler_ov))),
         "thisOver": snap.get("this_over", []),
         "lastOver": snap.get("prev_over", []),
         "partnership": snap.get("partnership", 0),
@@ -306,6 +309,83 @@ def overlay_state(snap: dict, st: "ServerState", hi: str = "", en: str = "") -> 
         "branding": st.branding,
         "privacy": st.privacy,
     }
+
+
+
+# ---------------------------------------------------------------------------
+#  Playout buffer — "10 second late, par bilkul ek saath"
+# ---------------------------------------------------------------------------
+class PlayoutBuffer:
+    """
+    Asli TV channels koi bhi cheez hote hi hawa mein nahi bhejte — sab kuch ek
+    playout server se guzarta hai jismein ek *fixed* delay hoti hai. Isi wajah
+    se picture, score-bug aur commentary aapas mein chipke dikhte hain, ek dusre
+    se aage-peeche nahi hote.
+
+    Bina iske kya hota tha: Cricbuzz ek baar mein 3 ball de de (missed poll),
+    to commentary 3 line ek saath bol padti thi, animation tez ho jati thi aur
+    scoreboard achanak kood jata tha — stream "alag alag" lagne lagti thi.
+
+    Ab har event queue mein jata hai aur theek `delay` second baad, aur kam se
+    kam `min_gap` second ke faasle se nikalta hai. Result: hamesha ek hi raftaar.
+
+    delay    = kitni der baad hawa mein jaye (default 10 second)
+    min_gap  = do bade events ke beech kam se kam kitna waqt (burst rokta hai)
+    """
+
+    def __init__(self, delay: float = 10.0, min_gap: float = 2.2):
+        self.delay = delay
+        self.min_gap = min_gap          # sirf "gap wale" events ke liye
+        self.q: "asyncio.Queue" = asyncio.Queue()
+        self.last_emit = 0.0
+        self.pending = 0
+        # group -> kab emit hua. Isse pata chalta hai ki "ye ball ka group
+        # nikal chuka hai", chahe beech mein over-card aa gaya ho.
+        self.seen_groups: dict = {}
+
+    def push(self, at: float, fn, tag: str = "", gap: bool = False, group=None):
+        self.q.put_nowait((at, fn, tag, gap, group))
+        self.pending += 1
+
+    async def _run(self):
+        while True:
+            at, fn, tag, gap, group = await self.q.get()
+
+            # Ye group nikal chuka hai? (ball animation + SFX + awaaz ek hi
+            # group hain). TTS synthesis mein 1-4 second lag sakta hai, tab tak
+            # over-card bhi nikal chuka hota tha — purana code usse "naya group"
+            # samajh kar 2.2 second ka faasla daal deta tha, aur awaaz ball ke
+            # 4 second baad sunayi deti thi. Ab group yaad rakhte hain.
+            now = time.time()
+            already = group is not None and group in self.seen_groups
+
+            if already:
+                wait = at + self.delay - now
+            else:
+                target = at + self.delay
+                floor = (self.last_emit + self.min_gap) if gap else 0.0
+                wait = max(target, floor) - now
+
+            if wait > 0:
+                await asyncio.sleep(wait)
+            try:
+                await fn()
+            except Exception as exc:
+                LOG.warning("playout emit fail (%s): %s", tag, exc)
+
+            if gap and not already:
+                self.last_emit = time.time()
+            if group is not None:
+                self.seen_groups[group] = time.time()
+                # purane group yaad mat rakho (yaad had se na badhe)
+                if len(self.seen_groups) > 200:
+                    cut = time.time() - 300
+                    for k in [k for k, t in self.seen_groups.items() if t < cut]:
+                        self.seen_groups.pop(k, None)
+            self.pending -= 1
+
+    def start(self):
+        asyncio.create_task(self._run())
 
 
 # ---------------------------------------------------------------------------
@@ -481,8 +561,24 @@ class App:
         self.want_rehearsal = False
         self.want_switch = False
         self.want_live = False
+        # playout: sab kuch fixed delay se hawa mein jata hai (smooth stream)
+        self.playout = PlayoutBuffer(
+            delay=float(cfg.get("playout", {}).get("delay_seconds", 10.0)),
+            min_gap=float(cfg.get("playout", {}).get("min_gap_seconds", 2.2)))
+        # NOTE: .start() run() mein hota hai — yahan abhi event loop chalu nahi
+        # hota, isliye asyncio.create_task() fail ho jata.
 
     # -- websocket helpers --------------------------------------------------
+    def emit(self, msg: dict, gap: bool = False, at: float = None, group=None):
+        """
+        Overlay ko bhejo — par seedha nahi, playout buffer se hokar.
+        gap=True wale events ek dusre se kam se kam `min_gap` second door rehte
+        hain (taaki kabhi ek saath na ghus jayein). Ek hi `group` ke saare
+        hissa (ball + uski awaaz + uska SFX) ek saath chalte hain.
+        """
+        self.playout.push(at if at is not None else time.time(),
+                          (lambda: self.broadcast(msg)), msg.get("type", ""), gap, group)
+
     async def broadcast(self, msg: dict):
         if not self.clients:
             return
@@ -547,8 +643,23 @@ class App:
             st.last_over_number = over_no
         st.over_events.append(badge)
 
-        # ---- to the browser -------------------------------------------------
-        await self.broadcast({
+        # ---- to the browser (ATOMIC BUNDLE, playout buffer se hokar) --------
+        #
+        # Ek ball ke teeno hissa (animation + awaaz + SFX) HAMESHA ek saath aur
+        # theek order mein jane chahiye. Pehle hum awaaz ko alag task se bhejte
+        # the — par edge-tts ko 1-4 second lagte hain, aur tab tak queue mein
+        # doosre ball aa jate the, to awaaz apne ball ke 2-4 second baad chalti
+        # thi. Ab awaaz pehle taiyaar karte hain, phir teeno ko EK SAATH queue
+        # mein dalte hain — par `at` ball ka asli waqt rakhte hain, isse poora
+        # bundle theek ball_at + delay par chalta hai (synth ka time judta nahi).
+        ball_at = time.time()
+        grp = "ball-%d" % st.status["balls_seen"]
+        pro = prosody_for(cls)
+        sfx = ("six" if cls["is_six"] else
+               "four" if cls["is_four"] else
+               "wicket" if cls["is_wicket"] else None)
+
+        ball_msg = {
             "type": "ball",
             "payload": {
                 "runs": ev.get("runs", 0),
@@ -564,16 +675,29 @@ class App:
                 "ball_in_over": ev.get("ball_in_over", 0),
                 "over_end": ev.get("over_end", False),
             },
-        })
+        }
 
-        # ---- TTS (non-blocking so animation is never delayed) ----------------
-        pro = prosody_for(cls)
-        asyncio.create_task(self.speak(hi, kind="ball", rate=pro["rate"], pitch=pro["pitch"]))
+        async def emit_ball_bundle():
+            url = None
+            if hi and self.audio.enabled:
+                try:
+                    url = await asyncio.wait_for(
+                        self.audio.synth(hi, over=False, rate=pro["rate"], pitch=pro["pitch"]),
+                        timeout=8.0)
+                except Exception as exc:
+                    LOG.debug("ball tts synth: %s", exc)
+            # ORDER MAT BADALNA: ball -> sfx -> awaaz
+            self.emit(ball_msg, gap=True, at=ball_at, group=grp)
+            if sfx:
+                self.emit({"type": "sfx", "payload": {"name": sfx}},
+                          gap=True, at=ball_at, group=grp)
+            if url:
+                self.state.status["tts"] = True
+                self.emit({"type": "tts",
+                           "payload": {"url": url, "text": hi, "kind": "ball"}},
+                          gap=True, at=ball_at, group=grp)
 
-        # ---- SFX hint (browser plays the mp3 if present, else synthesises) ---
-        sfx = "six" if cls["is_six"] else ("four" if cls["is_four"] else ("wicket" if cls["is_wicket"] else None))
-        if sfx:
-            await self.broadcast({"type": "sfx", "payload": {"name": sfx}})
+        asyncio.create_task(emit_ball_bundle())
 
         LOG.info("[ball %s.%s] %s %s | %s | %s",
                  over_no, ev.get("ball_in_over"), ev.get("runs"), "W" if ev.get("wicket") else "",
@@ -583,12 +707,15 @@ class App:
         if ev.get("over_end"):
             await self.handle_over_end(snap, over_no, st.over_events)
 
-    async def speak(self, text: str, kind: str = "ball", rate: str = None, pitch: str = None):
+    async def speak(self, text: str, kind: str = "ball", rate: str = None,
+                    pitch: str = None, at: float = None, group=None):
+        # synth abhi (taaki waqt par taiyaar ho), broadcast playout se
         url = await self.audio.synth(text, over=(kind == "over"), rate=rate, pitch=pitch)
         if not url:
             return
         self.state.status["tts"] = True
-        await self.broadcast({"type": "tts", "payload": {"url": url, "text": text, "kind": kind}})
+        self.emit({"type": "tts", "payload": {"url": url, "text": text, "kind": kind}},
+                  gap=True, at=at, group=group)
 
     async def handle_over_end(self, snap: dict, over_no: int, timeline: list):
         ctx = {
@@ -603,12 +730,12 @@ class App:
         }
         runs = sum(int(t) for t in timeline if str(t).isdigit())
         line = await self.commentary.over_line(over_no, runs, timeline, ctx)
-        await self.broadcast({
+        self.emit({
             "type": "over_end",
             "payload": {"over": over_no, "runs": runs, "timeline": timeline, "text_hi": line},
-        })
+        }, gap=True, group="over-%d" % over_no)
         if self.audio.enabled:
-            asyncio.create_task(self.speak(line, kind="over"))
+            asyncio.create_task(self.speak(line, kind="over", group="over-%d" % over_no))
         LOG.info("[over %s] %s runs | %s", over_no, runs, timeline)
 
     # -- scraper callback ---------------------------------------------------
@@ -638,7 +765,7 @@ class App:
 
         # milestones (fifty / century / five-for) — fire once each
         for ms in detect_milestones(snap, st):
-            await self.broadcast({"type": "milestone", "payload": ms})
+            self.emit({"type": "milestone", "payload": ms}, gap=True)
             LOG.info("[milestone] %s %s", ms["kind"], ms["label"])
             if self.audio.enabled:
                 line = milestone_line(
@@ -1000,6 +1127,10 @@ class App:
 
         await self.audio.warmup()
         app = self.make_app()
+
+        # playout buffer chalu karo (ab event loop chal raha hai)
+        self.playout.start()
+
         runner = web.AppRunner(app)
         await runner.setup()
         port = int(os.getenv("PORT") or self.args.port or self.cfg["server"].get("port", 8080))

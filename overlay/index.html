@@ -11,22 +11,22 @@
   Ye file OBS Studio / Prism Live Studio me "Browser Source" ke roop me load hoti hai.
 
   TWO MODES:
-   1) LIVE MODE  -> agar page kisi host par serve ho raha ho, to WS se connect karega
-                    (ws://<host>/ws) aur Python backend (main.py) se events lega.
-   2) DEMO MODE  -> agar file:// se khola jaye ya WS connect na ho paye, to apne aap
-                    synthetic balls generate karega (test / rehearsal ke liye).
+  1) LIVE MODE  -> agar page kisi host par serve ho raha ho, to WS se connect karega
+  (ws://<host>/ws) aur Python backend (main.py) se events lega.
+  2) DEMO MODE  -> agar file:// se khola jaye ya WS connect na ho paye, to apne aap
+  synthetic balls generate karega (test / rehearsal ke liye).
 
   WEBSOCKET MESSAGE FORMAT (backend -> browser):
-    { "type": "state",    "payload": { ...full match state... } }
-    { "type": "ball",     "payload": { "runs":4, "extra":0, "wicket":false,
-                                       "shot":"SHOT_DRIVE", "event":"RUN_FOUR",
-                                       "text_en":"FOUR! ...", "text_hi":"चौका! ..." } }
-    { "type": "over_end", "payload": { "over":15, "runs":12,
-                                       "timeline":["1","4","0","6","W","2"],
-                                       "bowler":{...}, "bats":[{...},{...}] } }
-    { "type": "audio",    "payload": { "sfx":"six" } }
+  { "type": "state",  "payload": { ...full match state... } }
+  { "type": "ball",  "payload": { "runs":4, "extra":0, "wicket":false,
+  "shot":"SHOT_DRIVE", "event":"RUN_FOUR",
+  "text_en":"FOUR! ...", "text_hi":"चौका! ..." } }
+  { "type": "over_end", "payload": { "over":15, "runs":12,
+  "timeline":["1","4","0","6","W","2"],
+  "bowler":{...}, "bats":[{...},{...}] } }
+  { "type": "audio",  "payload": { "sfx":"six" } }
 
-  KEYS:  [S] sound on/off   [H] help / hide UI   [F] fullscreen
+  KEYS:  [S] sound on/off  [H] help / hide UI  [F] fullscreen
   ============================================================================
 -->
 <style>
@@ -132,12 +132,25 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 .sb-top{display:flex;align-items:center;height:116px;padding:0 26px;gap:22px}
 .team-chip{width:14px;height:78px;border-radius:4px;background:#0a4bd6;flex:0 0 auto}
 .score-block{display:flex;align-items:baseline;gap:14px}
-.team-name{font-size:44px;font-weight:900;letter-spacing:1px}
-.score-num{font-size:82px;font-weight:900;line-height:.9;font-variant-numeric:tabular-nums;
-  text-shadow:0 4px 22px rgba(29,233,182,.35)}
-.score-wk{font-size:44px;font-weight:800;color:#ff8a9c}
-.score-ov{font-size:36px;font-weight:800;color:#8fb2cc;font-variant-numeric:tabular-nums;
-  margin-left:6px}
+.team-name{font-size:54px;font-weight:900;letter-spacing:1px}
+.score-num{font-size:118px;font-weight:900;line-height:.86;font-variant-numeric:tabular-nums;
+  text-shadow:0 6px 30px rgba(29,233,182,.5)}
+.score-wk{font-size:56px;font-weight:800;color:#ff8a9c}
+.score-ov{font-size:44px;font-weight:800;color:#8fb2cc;font-variant-numeric:tabular-nums;
+  margin-left:8px}
+
+/* ---- LIVE COUNTDOWN (chase) ---- */
+.countdown{margin-left:auto;display:flex;align-items:center;gap:18px;
+  padding:10px 24px;border-radius:14px;
+  background:linear-gradient(100deg,rgba(232,17,45,.22),rgba(232,17,45,.06));
+  border:2px solid rgba(255,138,156,.5)}
+.countdown.hide{display:none}
+.cd-lab{font-size:15px;font-weight:900;letter-spacing:2.4px;color:#ff9fb0}
+.cd-main{font-size:56px;font-weight:900;line-height:.9;color:#fff;
+  font-variant-numeric:tabular-nums;text-shadow:0 4px 20px rgba(232,17,45,.5)}
+.cd-main .in{font-size:26px;font-weight:800;color:#ff9fb0;margin:0 6px}
+.cd-rrr{font-size:19px;font-weight:800;color:#ffd0d8;text-align:center;line-height:1.15}
+.cd-rrr b{font-size:26px;color:#fff}
 
 .sb-div{width:2px;height:82px;background:rgba(255,255,255,.14);flex:0 0 auto}
 
@@ -220,7 +233,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 
 /* ============================  AUDIO UNLOCK GATE  ======================== */
 /* Android Chrome blocks WebAudio until a real user gesture, so we show a
-   "TAP TO GO LIVE" gate. Add ?auto=1 to the URL to skip it (OBS / desktop). */
+  "TAP TO GO LIVE" gate. Add ?auto=1 to the URL to skip it (OBS / desktop). */
 #gate{position:absolute;left:0;top:0;width:1920px;height:1080px;z-index:100;
   background:radial-gradient(ellipse at 50% 45%,rgba(9,22,38,.94),rgba(2,5,10,.97));
   display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -246,133 +259,141 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 
   <!-- ===== TOP HEADER ===== -->
   <header id="hdr">
-    <div class="live-badge"><span class="live-dot"></span>LIVE</div>
-    <div>
-      <div class="match-title" id="mTitle">INDIA vs AUSTRALIA</div>
-      <div class="match-sub" id="mSub">T20 · Narendra Modi Stadium, Ahmedabad · 2nd Innings</div>
-    </div>
-    <div class="hdr-stats">
-      <div class="chip"><div class="k">TARGET</div><div class="v" id="hTarget">195</div></div>
-      <div class="chip"><div class="k">CRR</div><div class="v" id="hCrr">9.06</div></div>
-      <div class="chip need"><div class="k">REQ RATE</div><div class="v" id="hRrr">14.14</div></div>
-      <div class="chip need"><div class="k">NEED</div><div class="v" id="hNeed">47 off 22</div></div>
-      <div class="viewers"><span class="eye"></span><span id="hViewers">12,480</span></div>
-    </div>
+  <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+  <div>
+  <div class="match-title" id="mTitle">INDIA vs AUSTRALIA</div>
+  <div class="match-sub" id="mSub">T20 · Narendra Modi Stadium, Ahmedabad · 2nd Innings</div>
+  </div>
+  <div class="hdr-stats">
+  <div class="chip"><div class="k">TARGET</div><div class="v" id="hTarget">195</div></div>
+  <div class="chip"><div class="k">CRR</div><div class="v" id="hCrr">9.06</div></div>
+  <div class="chip need"><div class="k">REQ RATE</div><div class="v" id="hRrr">14.14</div></div>
+  <div class="chip need"><div class="k">NEED</div><div class="v" id="hNeed">47 off 22</div></div>
+  <div class="viewers"><span class="eye"></span><span id="hViewers">12,480</span></div>
+  </div>
   </header>
 
   <!-- ===== WAGON WHEEL ===== -->
   <div id="wagonWrap"><canvas id="wagon" width="264" height="264"></canvas>
-    <div class="wlabel">WAGON WHEEL</div></div>
+  <div class="wlabel">WAGON WHEEL</div></div>
 
   <!-- ===== MILESTONE LOWER-THIRD ===== -->
   <div id="msCard"><div class="ms">
-      <div class="ms-k" id="msK">MILESTONE</div>
-      <div class="ms-v" id="msV">50</div>
-      <div class="ms-n" id="msN">PLAYER</div>
-      <div class="ms-s" id="msS"></div>
+  <div class="ms-k" id="msK">MILESTONE</div>
+  <div class="ms-v" id="msV">50</div>
+  <div class="ms-n" id="msN">PLAYER</div>
+  <div class="ms-s" id="msS"></div>
   </div></div>
+
+  <!-- ===== BOUNDARY PULSE ===== -->
+  <div id="pulse"></div>
 
   <!-- ===== OFFLINE BADGE ===== -->
   <div id="offline" >CONNECTION LOST — RETRYING…</div>
 
   <!-- ===== BIG FLASH (SIX / FOUR / OUT) ===== -->
   <div id="flash"><div style="text-align:center">
-      <div class="txt" id="flashTxt">SIX!</div><div class="sub" id="flashSub"></div>
+  <div class="txt" id="flashTxt">SIX!</div><div class="sub" id="flashSub"></div>
   </div></div>
 
   <!-- ===== OVER SUMMARY CARD ===== -->
   <div id="overCard">
-    <div class="card">
-      <div class="oc-head">
-        <div class="oc-title" id="ocTitle">OVER 15 — SUMMARY</div>
-        <div class="oc-runs"><span id="ocRuns">12</span><small>RUNS</small></div>
-      </div>
-      <div class="oc-timeline" id="ocTimeline"></div>
-      <div class="oc-rows">
-        <div class="oc-row"><div><div class="lb">BOWLER</div><div class="nm" id="ocBowler">M STARC</div></div>
-          <div class="st" id="ocBowlerFig">3.2-0-31-1</div></div>
-        <div class="oc-row"><div><div class="lb">STRIKER</div><div class="nm" id="ocBat1">V KOHLI</div></div>
-          <div class="st" id="ocBat1Fig">62 (38)</div></div>
-        <div class="oc-row"><div><div class="lb">PARTNERSHIP</div><div class="nm" id="ocPart">95 runs</div></div>
-          <div class="st" id="ocPartFig">38 balls</div></div>
-        <div class="oc-row"><div><div class="lb">NON-STRIKER</div><div class="nm" id="ocBat2">KL RAHUL</div></div>
-          <div class="st" id="ocBat2Fig">33 (24)</div></div>
-      </div>
-    </div>
+  <div class="card">
+  <div class="oc-head">
+  <div class="oc-title" id="ocTitle">OVER 15 — SUMMARY</div>
+  <div class="oc-runs"><span id="ocRuns">12</span><small>RUNS</small></div>
+  </div>
+  <div class="oc-timeline" id="ocTimeline"></div>
+  <div class="oc-rows">
+  <div class="oc-row"><div><div class="lb">BOWLER</div><div class="nm" id="ocBowler">M STARC</div></div>
+  <div class="st" id="ocBowlerFig">3.2-0-31-1</div></div>
+  <div class="oc-row"><div><div class="lb">STRIKER</div><div class="nm" id="ocBat1">V KOHLI</div></div>
+  <div class="st" id="ocBat1Fig">62 (38)</div></div>
+  <div class="oc-row"><div><div class="lb">PARTNERSHIP</div><div class="nm" id="ocPart">95 runs</div></div>
+  <div class="st" id="ocPartFig">38 balls</div></div>
+  <div class="oc-row"><div><div class="lb">NON-STRIKER</div><div class="nm" id="ocBat2">KL RAHUL</div></div>
+  <div class="st" id="ocBat2Fig">33 (24)</div></div>
+  </div>
+  </div>
   </div>
 
   <!-- ===== BOTTOM SCOREBAR ===== -->
   <div id="scorebar">
-    <div class="sb-top">
-      <div class="team-chip" id="teamChip"></div>
-      <div class="score-block">
-        <div class="team-name" id="sTeam">IND</div>
-        <div class="score-num" id="sScore">148</div>
-        <div class="score-wk" id="sWkts">-4</div>
-        <div class="score-ov" id="sOvers">(16.2)</div>
-      </div>
-      <div class="sb-div"></div>
-      <div class="mini-col">
-        <div class="mini"><span class="tag on">BAT</span>
-          <span class="val" id="sBat1">V KOHLI <b>62</b>(38)</span></div>
-        <div class="mini"><span class="tag">BAT</span>
-          <span class="val" id="sBat2">KL RAHUL <b>33</b>(24)</span></div>
-      </div>
-      <div class="sb-div"></div>
-      <div class="mini-col" style="min-width:320px">
-        <div class="mini"><span class="tag bowl">BOWL</span>
-          <span class="val" id="sBowl">M STARC <b>3.2-0-31-1</b></span></div>
-        <div class="mini"><span class="tag">ECO</span>
-          <span class="val" id="sEcon">Economy <b>9.30</b> · This over <b>9</b></span></div>
-      </div>
-      <div class="partner">
-        <div><div class="lb">LAST 10 OVS</div><div class="val" id="sLast10">78/2</div></div>
-      </div>
-    </div>
-    <div class="sb-bot">
-      <div class="balls-label">THIS OVER</div>
-      <div id="thisOver" style="display:flex;gap:10px"></div>
-      <div class="sb-div" style="height:52px"></div>
-      <div class="balls-label">LAST OVER</div>
-      <div id="lastOver" style="display:flex;gap:10px"></div>
-      <div class="spacer"></div>
-      <div class="brand-tag">CRS · AUTO 2D ENGINE</div>
-    </div>
+  <div class="sb-top">
+  <div class="team-chip" id="teamChip"></div>
+  <div class="score-block">
+  <div class="team-name" id="sTeam">IND</div>
+  <div class="score-num" id="sScore">148</div>
+  <div class="score-wk" id="sWkts">-4</div>
+  <div class="score-ov" id="sOvers">(16.2)</div>
+  </div>
+  <div class="sb-div"></div>
+  <div class="mini-col">
+  <div class="mini"><span class="tag on">BAT</span>
+  <span class="val" id="sBat1">V KOHLI <b>62</b>(38)</span></div>
+  <div class="mini"><span class="tag">BAT</span>
+  <span class="val" id="sBat2">KL RAHUL <b>33</b>(24)</span></div>
+  </div>
+  <div class="sb-div"></div>
+  <div class="mini-col" style="min-width:320px">
+  <div class="mini"><span class="tag bowl">BOWL</span>
+  <span class="val" id="sBowl">M STARC <b>3.2-0-31-1</b></span></div>
+  <div class="mini"><span class="tag">ECO</span>
+  <span class="val" id="sEcon">Economy <b>9.30</b> · This over <b>9</b></span></div>
+  </div>
+  <div class="partner">
+  <div><div class="lb">LAST 10 OVS</div><div class="val" id="sLast10">78/2</div></div>
+  </div>
+  <div class="countdown" id="countdown">
+  <div class="cd-lab">NEED</div>
+  <div class="cd-main"><span id="cdRuns">0</span><span class="in">IN</span><span id="cdBalls">0</span></div>
+  <div class="cd-rrr">RRR<br><b id="cdRrr">0.00</b></div>
+  </div>
+  </div>
+  <div class="sb-bot">
+  <div class="balls-label">THIS OVER</div>
+  <div id="thisOver" style="display:flex;gap:10px"></div>
+  <div class="sb-div" style="height:52px"></div>
+  <div class="balls-label">LAST OVER</div>
+  <div id="lastOver" style="display:flex;gap:10px"></div>
+  <div class="spacer"></div>
+  <div class="brand-tag">CRS · AUTO 2D ENGINE</div>
+  </div>
   </div>
 
   <!-- ===== COMMENTARY TICKER ===== -->
   <div id="ticker">
-    <div class="tbadge">COMMENTARY</div>
-    <div id="comm">मैच शुरू होने वाला है… इंतज़ार कीजिए!</div>
+  <div class="tbadge">COMMENTARY</div>
+  <div id="comm">मैच शुरू होने वाला है… इंतज़ार कीजिए!</div>
   </div>
 
   <!-- ===== FOOTER BRAND ===== -->
   <div id="brand">
-    <div class="logo">C</div>
-    <div class="chan">CRICKET 2D LIVE</div>
-    <div class="handle">@cricket2dlive</div>
-    <div class="right">
-      <div class="pill" id="pMode">DEMO MODE</div>
-      <div class="pill" id="pSound">SOUND OFF</div>
-      <div class="pill hot">SUBSCRIBE</div>
-    </div>
+  <div class="logo">C</div>
+  <div class="chan">CRICKET 2D LIVE</div>
+  <div class="handle">@cricket2dlive</div>
+  <div class="right">
+  <div class="pill" id="pMode">DEMO MODE</div>
+  <div class="pill" id="pSound">SOUND OFF</div>
+  <div class="pill hot">SUBSCRIBE</div>
+  </div>
   </div>
 
   <!-- ===== STATUS / HELP ===== -->
   <div id="status"><span class="dot"></span><span id="statusTxt">DEMO</span></div>
   <div id="help">
-    <b>LIVE CRICKET 2D ENGINE</b> — self-contained overlay<br>
-    <b>S</b> sound on/off &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>F</b> fullscreen<br>
-    Live mode: serve via <b>main.py</b> (ws://host/ws)
+  <b>LIVE CRICKET 2D ENGINE</b> — self-contained overlay<br>
+  <b>S</b> sound on/off &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>F</b> fullscreen<br>
+  Live mode: serve via <b>main.py</b> (ws://host/ws)
   </div>
 
   <!-- ===== AUDIO UNLOCK GATE (tap required on Android) ===== -->
   <div id="gate">
-    <div class="gt">LIVE CRICKET 2D</div>
-    <div class="gs">ऑडियो चालू करने के लिए स्क्रीन पर टैप करें</div>
-    <div class="gb">▶ TAP TO GO LIVE</div>
-    <div class="gn">Android Chrome blocks sound until you tap once.<br>
-      Desktop/OBS: add <b>?auto=1</b> to the URL to skip this screen.</div>
+  <div class="gt">LIVE CRICKET 2D</div>
+  <div class="gs">ऑडियो चालू करने के लिए स्क्रीन पर टैप करें</div>
+  <div class="gb">▶ TAP TO GO LIVE</div>
+  <div class="gn">Android Chrome blocks sound until you tap once.<br>
+  Desktop/OBS: add <b>?auto=1</b> to the URL to skip this screen.</div>
   </div>
 
 </div>
@@ -381,75 +402,75 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 <script>
 "use strict";
 /* ==========================================================================
-   1. STATE
-   ========================================================================== */
+  1. STATE
+  ========================================================================== */
 const S = {
   match : { title:"INDIA vs AUSTRALIA", format:"T20", venue:"Narendra Modi Stadium, Ahmedabad",
-            innings:"2nd Innings", chase:true },
+  innings:"2nd Innings", chase:true },
   batting : { code:"IND", color:"#0a4bd6", score:148, wkts:4, balls:98, maxOvers:20 },
   bowling : { code:"AUS", color:"#0a8f4b" },
   target : 195,
-  striker    : { name:"V KOHLI",  num:18, runs:62, balls:38, fours:5, sixes:3 },
-  nonStriker : { name:"KL RAHUL", num:1,  runs:33, balls:24, fours:2, sixes:1 },
-  bowler     : { name:"M STARC",  ov:3, balls:20, md:0, runs:31, wkts:1 },
+  striker  : { name:"V KOHLI", runs:62, balls:38, fours:5, sixes:3 },
+  nonStriker : { name:"KL RAHUL",  runs:33, balls:24, fours:2, sixes:1 },
+  bowler  : { name:"M STARC",  ov:3, balls:20, md:0, runs:31, wkts:1 },
   thisOver : ["1","4","0"],
   lastOver : ["1","4","0","6","W","2"],
-  last10   : "78/2",
+  last10  : "78/2",
   partnership : 95,
-  partBalls   : 38,
+  partBalls  : 38,
   viewers : 12480,
   commentary_hi : "मैच शुरू होने वाला है… इंतज़ार कीजिए!",
   commentary_en : ""
 };
 
 /* ==========================================================================
-   2. FIELD / PITCH GEOMETRY  (canvas 1920 x 604)
-   ========================================================================== */
+  2. FIELD / PITCH GEOMETRY  (canvas 1920 x 604)
+  ========================================================================== */
 const G = {
   w:1920, h:604,
   cx:960, cy:300,
-  rx:930, ry:288,            // boundary ellipse
-  pitchX:880, pitchW:160,    // pitch rectangle
+  rx:930, ry:288,  // boundary ellipse
+  pitchX:880, pitchW:160,  // pitch rectangle
   pitchTop:44, pitchBot:470,
   creaseTop:104, creaseBot:428,
   strikerEnd:452, bowlerEnd:84
 };
 
-const striker    = { x:838, y:432, num:18, name:"KOHLI",  flip:false };
-const nonStriker = { x:924, y:120, num:1,  name:"RAHUL",  flip:true  };
-const bowler     = { x:960, y:66,  num:56, name:"STARC",  flip:false };
-const umpire     = { x:1010, y:56, num:"", name:"",       flip:false };
-const keeper     = { x:960, y:498, num:7,  name:"CAREY",  flip:false };
+const striker  = { x:838, y:432, name:"KOHLI",  flip:false };
+const nonStriker = { x:924, y:120,  name:"RAHUL",  flip:true  };
+const bowler  = { x:960, y:66, name:"STARC",  flip:false };
+const umpire  = { x:1010, y:56, name:"",  flip:false };
+const keeper  = { x:960, y:498,  name:"CAREY",  flip:false };
 
 const FIELDERS = [
-  { id:"SLIP",     x:1064, y:250, num:49, name:"SLIP" },
-  { id:"POINT",    x:1240, y:352, num:30, name:"POINT" },
-  { id:"COVER",    x:1280, y:262, num:8,  name:"COVER" },
-  { id:"MID-OFF",  x:1046, y:74,  num:31, name:"M-OFF" },
-  { id:"MID-ON",   x:856,  y:74,  num:19, name:"M-ON" },
-  { id:"LONG-ON",  x:452,  y:92,  num:5,  name:"L-ON" },
-  { id:"LONG-OFF", x:1470, y:96,  num:17, name:"L-OFF" },
-  { id:"FINE-LEG", x:552,  y:512, num:88, name:"F-LEG" },
-  { id:"THIRD-MAN",x:1392, y:520, num:4,  name:"3RD" },
-  { id:"DEEP-MID", x:300,  y:330, num:12, name:"D-MID" }
+  { id:"SLIP",  x:1064, y:250, name:"SLIP" },
+  { id:"POINT",  x:1240, y:352, name:"POINT" },
+  { id:"COVER",  x:1280, y:262, name:"COVER" },
+  { id:"MID-OFF",  x:1046, y:74, name:"M-OFF" },
+  { id:"MID-ON",  x:856,  y:74, name:"M-ON" },
+  { id:"LONG-ON",  x:452,  y:92, name:"L-ON" },
+  { id:"LONG-OFF", x:1470, y:96, name:"L-OFF" },
+  { id:"FINE-LEG", x:552,  y:512, name:"F-LEG" },
+  { id:"THIRD-MAN",x:1392, y:520, name:"3RD" },
+  { id:"DEEP-MID", x:300,  y:330, name:"D-MID" }
 ];
 FIELDERS.forEach(f => { f.hx = f.x; f.hy = f.y; f.react = 0; });
 
 /* Shot -> boundary target points */
 const SHOT_TARGET = {
-  SHOT_PULL   : [{x:352,y:300},{x:392,y:376}],
-  SHOT_HOOK   : [{x:520,y:556},{x:430,y:520}],
+  SHOT_PULL  : [{x:352,y:300},{x:392,y:376}],
+  SHOT_HOOK  : [{x:520,y:556},{x:430,y:520}],
   SHOT_DRIVE  : [{x:1300,y:232},{x:1216,y:150}],
   SHOT_STRAIGHT:[{x:960,y:26},{x:1046,y:30}],
-  SHOT_CUT    : [{x:1500,y:430},{x:1360,y:566}],
-  SHOT_SIX    : [{x:420,y:86},{x:1520,y:84},{x:960,y:22},{x:250,y:250}],
+  SHOT_CUT  : [{x:1500,y:430},{x:1360,y:566}],
+  SHOT_SIX  : [{x:420,y:86},{x:1520,y:84},{x:960,y:22},{x:250,y:250}],
   SHOT_FLICK  : [{x:330,y:200},{x:300,y:318}],
   SHOT_DEFENSE: null
 };
 
 /* ==========================================================================
-   3. CANVAS SETUP
-   ========================================================================== */
+  3. CANVAS SETUP
+  ========================================================================== */
 const cv  = document.getElementById("ground");
 const ctx = cv.getContext("2d");
 function fitCanvas(){
@@ -457,7 +478,7 @@ function fitCanvas(){
   // Rendering a 1920x604 canvas at dpr 3 = 5760x1812 buffer -> frame drops.
   // Cap it: 1.0 on touch devices, 2 on desktop.
   const isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
-                  || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+  || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
   const cap = isTouch ? 1 : 2;
   const dpr = Math.min(window.devicePixelRatio || 1, cap);
   cv.width  = Math.round(G.w * dpr);
@@ -470,14 +491,14 @@ fitCanvas();
 function fitStage(){
   const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
   document.getElementById("stage").style.transform =
-    "translate(-50%,-50%) scale(" + s + ")";
+  "translate(-50%,-50%) scale(" + s + ")";
 }
 fitStage();
 window.addEventListener("resize", () => { fitStage(); fitCanvas(); });
 
 /* ==========================================================================
-   4. DRAWING PRIMITIVES
-   ========================================================================== */
+  4. DRAWING PRIMITIVES
+  ========================================================================== */
 function rr(c,x,y,w,h,r){
   c.beginPath();
   c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
@@ -490,12 +511,12 @@ function rr(c,x,y,w,h,r){
 /* Cartoon player ---------------------------------------------------------- */
 function drawPlayer(c, p, o){
   o = o || {};
-  const col   = o.color || "#0a4bd6";
+  const col  = o.color || "#0a4bd6";
   const scale = o.scale || 1;
-  const bat   = o.bat || false;
-  const bowlA = o.bowlArm || 0;   // -1 .. 1 (bowling arm swing)
-  const legs  = o.legs || 0;      // running leg phase
-  const sk    = o.skin || "#f0c39a";
+  const bat  = o.bat || false;
+  const bowlA = o.bowlArm || 0;  // -1 .. 1 (bowling arm swing)
+  const legs  = o.legs || 0;  // running leg phase
+  const sk  = o.skin || "#f0c39a";
 
   c.save();
   c.translate(p.x, p.y);
@@ -518,32 +539,28 @@ function drawPlayer(c, p, o){
   rr(c, -13, -50, 26, 38, 8); c.fill();
   c.strokeStyle = "rgba(0,0,0,.35)"; c.lineWidth = 1.5; c.stroke();
 
-  // jersey number
-  if (p.num !== "" && p.num != null){
-    c.fillStyle = "#fff"; c.font = "900 16px system-ui,sans-serif";
-    c.textAlign = "center"; c.textBaseline = "middle";
-    c.fillText(String(p.num), 0, -30);
-  }
+  // NOTE: jersey number jaan-bujh kar NAHI dikhate. Cricbuzz jersey number
+  // deta hi nahi, aur nakli number dikhana galat data hai — isliye sirf naam.
 
   // arms
   c.strokeStyle = sk; c.lineWidth = 5.5;
   if (bat){
-    // bat in hands, angled
-    c.save(); c.translate(12, -42); c.rotate(o.batAng != null ? o.batAng : 0.35);
-    c.fillStyle = "#c8913f";
-    rr(c, -4, -40, 8, 46, 4); c.fill();
-    c.fillStyle = "#8b5a1e"; rr(c, -5, -46, 10, 9, 3); c.fill();
-    c.restore();
-    c.beginPath(); c.moveTo(-11,-44); c.lineTo(10,-40); c.stroke();
-    c.beginPath(); c.moveTo(-11,-44); c.lineTo(6,-46); c.stroke();
+  // bat in hands, angled
+  c.save(); c.translate(12, -42); c.rotate(o.batAng != null ? o.batAng : 0.35);
+  c.fillStyle = "#c8913f";
+  rr(c, -4, -40, 8, 46, 4); c.fill();
+  c.fillStyle = "#8b5a1e"; rr(c, -5, -46, 10, 9, 3); c.fill();
+  c.restore();
+  c.beginPath(); c.moveTo(-11,-44); c.lineTo(10,-40); c.stroke();
+  c.beginPath(); c.moveTo(-11,-44); c.lineTo(6,-46); c.stroke();
   } else if (bowlA !== 0){
-    c.save(); c.translate(0,-44); c.rotate(bowlA * 1.15);
-    c.beginPath(); c.moveTo(0,0); c.lineTo(4, 26); c.stroke();
-    c.restore();
-    c.beginPath(); c.moveTo(-10,-44); c.lineTo(-16,-22); c.stroke();
+  c.save(); c.translate(0,-44); c.rotate(bowlA * 1.15);
+  c.beginPath(); c.moveTo(0,0); c.lineTo(4, 26); c.stroke();
+  c.restore();
+  c.beginPath(); c.moveTo(-10,-44); c.lineTo(-16,-22); c.stroke();
   } else {
-    c.beginPath(); c.moveTo(-11,-44); c.lineTo(-17,-24); c.stroke();
-    c.beginPath(); c.moveTo( 11,-44); c.lineTo( 17,-24); c.stroke();
+  c.beginPath(); c.moveTo(-11,-44); c.lineTo(-17,-24); c.stroke();
+  c.beginPath(); c.moveTo( 11,-44); c.lineTo( 17,-24); c.stroke();
   }
 
   // head
@@ -553,22 +570,22 @@ function drawPlayer(c, p, o){
   c.fillStyle = o.helmet ? "#12203a" : "#2b1d12";
   c.beginPath(); c.arc(0, -60, 11, Math.PI*1.05, Math.PI*2.0); c.fill();
   if (o.helmet){
-    c.fillStyle = "#e9eef5";
-    c.beginPath(); c.arc(2, -57, 3.2, 0, Math.PI*2); c.fill();
+  c.fillStyle = "#e9eef5";
+  c.beginPath(); c.arc(2, -57, 3.2, 0, Math.PI*2); c.fill();
   }
   c.restore();
 
   // name plate
   if (p.name){
-    c.save();
-    c.font = "800 13px system-ui,sans-serif"; c.textAlign = "center";
-    const w = c.measureText(p.name).width + 14;
-    c.fillStyle = "rgba(4,10,18,.78)";
-    rr(c, p.x - w/2, p.y + 8, w, 20, 6); c.fill();
-    c.fillStyle = o.nameCol || "#dbe9f5";
-    c.textBaseline = "middle";
-    c.fillText(p.name, p.x, p.y + 19);
-    c.restore();
+  c.save();
+  c.font = "800 13px system-ui,sans-serif"; c.textAlign = "center";
+  const w = c.measureText(p.name).width + 14;
+  c.fillStyle = "rgba(4,10,18,.78)";
+  rr(c, p.x - w/2, p.y + 8, w, 20, 6); c.fill();
+  c.fillStyle = o.nameCol || "#dbe9f5";
+  c.textBaseline = "middle";
+  c.fillText(p.name, p.x, p.y + 19);
+  c.restore();
   }
 }
 
@@ -600,10 +617,10 @@ function drawGround(){
   c.save();
   c.beginPath(); c.ellipse(G.cx,G.cy,G.rx,G.ry,0,0,Math.PI*2); c.clip();
   for (let i=1;i<=4;i++){
-    c.fillStyle = (i%2===0) ? "rgba(255,255,255,.045)" : "rgba(0,0,0,.05)";
-    c.beginPath();
-    c.ellipse(G.cx,G.cy,(G.rx/4.4)*i,(G.ry/4.4)*i,0,0,Math.PI*2);
-    c.fill();
+  c.fillStyle = (i%2===0) ? "rgba(255,255,255,.045)" : "rgba(0,0,0,.05)";
+  c.beginPath();
+  c.ellipse(G.cx,G.cy,(G.rx/4.4)*i,(G.ry/4.4)*i,0,0,Math.PI*2);
+  c.fill();
   }
   c.restore();
 
@@ -619,9 +636,9 @@ function drawGround(){
   c.strokeRect(G.pitchX, G.pitchTop, G.pitchW, G.pitchBot - G.pitchTop);
   // mow stripes on pitch
   for (let i=0;i<6;i++){
-    c.fillStyle = i%2 ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.045)";
-    c.fillRect(G.pitchX, G.pitchTop + i*((G.pitchBot-G.pitchTop)/6),
-               G.pitchW, (G.pitchBot-G.pitchTop)/6);
+  c.fillStyle = i%2 ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.045)";
+  c.fillRect(G.pitchX, G.pitchTop + i*((G.pitchBot-G.pitchTop)/6),
+  G.pitchW, (G.pitchBot-G.pitchTop)/6);
   }
   // creases
   c.strokeStyle = "#fff"; c.lineWidth = 3;
@@ -654,7 +671,7 @@ function drawStumps(x,y){
   const c = ctx;
   c.fillStyle = "#f6f1e2";
   for (let i=-1;i<=1;i++){
-    c.fillRect(x + i*11 - 2.5, y-34, 5, 36);
+  c.fillRect(x + i*11 - 2.5, y-34, 5, 36);
   }
   c.fillStyle = "#e6dfc9";
   c.fillRect(x-15, y-38, 11, 4);
@@ -664,12 +681,12 @@ function drawStumps(x,y){
 }
 
 /* ==========================================================================
-   5. BALL + ANIMATION ENGINE
-   ========================================================================== */
+  5. BALL + ANIMATION ENGINE
+  ========================================================================== */
 const ball = { x:0, y:0, z:0, visible:false, trail:[] };
 
 const anim = {
-  phase:"idle",              // idle | runup | flight | shot | running | done
+  phase:"idle",  // idle | runup | flight | shot | running | done
   t:0, dur:0,
   from:null, to:null, arc:0,
   runs:0, wicket:false, shot:null, event:null,
@@ -683,23 +700,23 @@ function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
 const DEMO_COMMENTARY = {
   RUN_SIX: [
-    ["SIX!! कोहली ने छक्का जड़ दिया! गेंद स्टैंड्स में गायब!","SIX!! Kohli launches it into the stands!"],
-    ["छह रन! शॉट खूबसूरत, लॉन्ग-ऑन के ऊपर से!","SIX! Sails over long-on!"]],
+  ["SIX!! कोहली ने छक्का जड़ दिया! गेंद स्टैंड्स में गायब!","SIX!! Kohli launches it into the stands!"],
+  ["छह रन! शॉट खूबसूरत, लॉन्ग-ऑन के ऊपर से!","SIX! Sails over long-on!"]],
   RUN_FOUR: [
-    ["चौका! कवर्स के बीच से शानदार ड्राइव, चार रन!","FOUR! Exquisite cover drive, beats the fielder."],
-    ["चार रन! गैप मिल गया और गेंद बाउंड्री पर!","FOUR! Found the gap perfectly."]],
+  ["चौका! कवर्स के बीच से शानदार ड्राइव, चार रन!","FOUR! Exquisite cover drive, beats the fielder."],
+  ["चार रन! गैप मिल गया और गेंद बाउंड्री पर!","FOUR! Found the gap perfectly."]],
   RUN_ONE: [
-    ["एक रन, लॉन्ग-ऑन की तरफ खेलकर सिंगल लिया।","One run taken, dabbed to long-on."],
-    ["सिंगल! जल्दी भागे और क्रीज में पहुँच गए।","Quick single, comfortably home."]],
+  ["एक रन, लॉन्ग-ऑन की तरफ खेलकर सिंगल लिया।","One run taken, dabbed to long-on."],
+  ["सिंगल! जल्दी भागे और क्रीज में पहुँच गए।","Quick single, comfortably home."]],
   RUN_TWO: [
-    ["दो रन! बीच-बीच में शानदार रनिंग, डबल पूरा!","TWO! Excellent running between the wickets."],
-    ["डबल! डीप मिड-विकेट की दिशा में खेला और 2 रन।","Two more, deep mid-wicket region."]],
+  ["दो रन! बीच-बीच में शानदार रनिंग, डबल पूरा!","TWO! Excellent running between the wickets."],
+  ["डबल! डीप मिड-विकेट की दिशा में खेला और 2 रन।","Two more, deep mid-wicket region."]],
   DOT: [
-    ["कोई रन नहीं, शानदार डिफेंसिव शॉट।","No run, solidly defended."],
-    ["डॉट बॉल! गेंदबाज़ ने दबाव बनाया।","Dot ball! Pressure building."]],
+  ["कोई रन नहीं, शानदार डिफेंसिव शॉट।","No run, solidly defended."],
+  ["डॉट बॉल! गेंदबाज़ ने दबाव बनाया।","Dot ball! Pressure building."]],
   WICKET: [
-    ["आउट!! कैच आउट! बल्लेबाज़ को जाना पड़ा, बड़ा विकेट!","OUT!! Caught! Big breakthrough for the bowler!"],
-    ["आउट!! स्टंप्स उड़ गए, बोल्ड! खत्म हो गए!","OUT!! Bowled! Timber!"]]
+  ["आउट!! कैच आउट! बल्लेबाज़ को जाना पड़ा, बड़ा विकेट!","OUT!! Caught! Big breakthrough for the bowler!"],
+  ["आउट!! स्टंप्स उड़ गए, बोल्ड! खत्म हो गए!","OUT!! Bowled! Timber!"]]
 };
 
 function eventFromRuns(r, wicket){
@@ -712,20 +729,20 @@ function eventFromRuns(r, wicket){
 }
 
 function shotForEvent(ev){
-  if (ev === "RUN_SIX")   return pick(["SHOT_SIX","SHOT_SIX","SHOT_DRIVE"]);
+  if (ev === "RUN_SIX")  return pick(["SHOT_SIX","SHOT_SIX","SHOT_DRIVE"]);
   if (ev === "RUN_FOUR")  return pick(["SHOT_DRIVE","SHOT_CUT","SHOT_PULL","SHOT_FLICK","SHOT_STRAIGHT"]);
-  if (ev === "DOT")       return "SHOT_DEFENSE";
+  if (ev === "DOT")  return "SHOT_DEFENSE";
   return pick(["SHOT_DRIVE","SHOT_FLICK","SHOT_PULL","SHOT_CUT"]);
 }
 
 /* --- Main entry: play one delivery --- */
 function playBall(payload){
   payload = payload || {};
-  const runs   = payload.runs != null ? payload.runs : 0;
+  const runs  = payload.runs != null ? payload.runs : 0;
   const extra  = payload.extra || 0;
   const wicket = !!payload.wicket;
-  const ev     = payload.event || eventFromRuns(runs, wicket);
-  const shot   = payload.shot  || shotForEvent(ev);
+  const ev  = payload.event || eventFromRuns(runs, wicket);
+  const shot  = payload.shot  || shotForEvent(ev);
 
   anim.runs = runs + extra;
   anim.wicket = wicket;
@@ -740,43 +757,43 @@ function playBall(payload){
 
   // bowler release -> batsman
   anim.from = { x: bowler.x + 6, y: bowler.y + 20 };
-  anim.to   = { x: striker.x + 20, y: striker.y - 22 };
+  anim.to  = { x: striker.x + 20, y: striker.y - 22 };
   anim.arc  = 26;
 
   // where does the ball go after the bat?
   const tg = SHOT_TARGET[shot];
   anim.chaseFielder = null;
   if (wicket){
-    anim.to2   = { x: G.cx + pick([-40,40]), y: G.creaseBot - 6 };
-    anim.arc2  = 6;
+  anim.to2  = { x: G.cx + pick([-40,40]), y: G.creaseBot - 6 };
+  anim.arc2  = 6;
   } else if (tg && (runs === 4 || runs === 6)){
-    const p = pick(tg);
-    anim.to2 = { x:p.x, y:p.y };
-    anim.arc2 = (runs === 6) ? 200 : 40;
+  const p = pick(tg);
+  anim.to2 = { x:p.x, y:p.y };
+  anim.arc2 = (runs === 6) ? 200 : 40;
   } else if (tg){
-    const p = pick(tg);
-    anim.to2 = { x: striker.x + (p.x - striker.x) * pick([0.45,0.6,0.72]),
-                 y: striker.y + (p.y - striker.y) * pick([0.45,0.6,0.72]) };
-    anim.arc2 = 18;
-    // nearest fielder chases
-    let best = null, bd = 1e9;
-    FIELDERS.forEach(f => {
-      const d = (f.x-anim.to2.x)**2 + (f.y-anim.to2.y)**2;
-      if (d < bd){ bd = d; best = f; }
-    });
-    anim.chaseFielder = best;
+  const p = pick(tg);
+  anim.to2 = { x: striker.x + (p.x - striker.x) * pick([0.45,0.6,0.72]),
+  y: striker.y + (p.y - striker.y) * pick([0.45,0.6,0.72]) };
+  anim.arc2 = 18;
+  // nearest fielder chases
+  let best = null, bd = 1e9;
+  FIELDERS.forEach(f => {
+  const d = (f.x-anim.to2.x)**2 + (f.y-anim.to2.y)**2;
+  if (d < bd){ bd = d; best = f; }
+  });
+  anim.chaseFielder = best;
   } else {
-    anim.to2 = { x: striker.x + pick([-70,70]), y: striker.y + pick([14,30]) };
-    anim.arc2 = 8;
+  anim.to2 = { x: striker.x + pick([-70,70]), y: striker.y + pick([14,30]) };
+  anim.arc2 = 8;
   }
 
   // apply scoreboard changes
   applyBallToScore(runs, extra, wicket, ev);
 
   // flash + audio + commentary
-  if (ev === "RUN_SIX")   showFlash("SIX!",  "#c08bff", "छक्का! " + runs + " रन");
+  if (ev === "RUN_SIX")  showFlash("SIX!",  "#c08bff", "छक्का! " + runs + " रन");
   if (ev === "RUN_FOUR")  showFlash("FOUR!", "#ffcc33", "चौका! " + runs + " रन");
-  if (wicket)             showFlash("OUT!",  "#ff6b84", "विकेट!");
+  if (wicket)  showFlash("OUT!",  "#ff6b84", "विकेट!");
   sfx(ev);
   setCommentary(payload.text_hi, payload.text_en);
   duck(1400);
@@ -793,10 +810,10 @@ function applyBallToScore(runs, extra, wicket, ev){
 
   const st = S.striker;
   if (!wicket){
-    st.runs += runs;
-    if (legal) st.balls += 1;
-    if (runs === 4) st.fours += 1;
-    if (runs === 6) st.sixes += 1;
+  st.runs += runs;
+  if (legal) st.balls += 1;
+  if (runs === 4) st.fours += 1;
+  if (runs === 6) st.sixes += 1;
   }
   S.partnership += runs;
   if (legal) S.partBalls += 1;
@@ -810,18 +827,18 @@ function applyBallToScore(runs, extra, wicket, ev){
 
   // strike rotation
   if (legal){
-    const odd = (runs + extra) % 2 === 1;
-    if (odd) swapBatters();
-    if (S.thisOver.length >= 6) endOver();
+  const odd = (runs + extra) % 2 === 1;
+  if (odd) swapBatters();
+  if (S.thisOver.length >= 6) endOver();
   }
   renderAll();
 }
 
 function swapBatters(){
   const t = S.striker; S.striker = S.nonStriker; S.nonStriker = t;
-  const a = { name:striker.name, num:striker.num };
-  striker.name = nonStriker.name; striker.num = nonStriker.num;
-  nonStriker.name = a.name;       nonStriker.num = a.num;
+  const a = { name:striker.name,};
+  striker.name = nonStriker.name; 
+  nonStriker.name = a.name;  nonStriker.num = a.num;
 }
 
 /* --- Over end --- */
@@ -832,9 +849,9 @@ function endOver(){
   S.thisOver = [];
   S.last6 = S.lastOver;
   showOverCard({
-    over: Math.floor(S.batting.balls / 6),
-    runs: runsThis,
-    timeline: timeline
+  over: Math.floor(S.batting.balls / 6),
+  runs: runsThis,
+  timeline: timeline
   });
   // rotate strike at end of over
   swapBatters();
@@ -842,8 +859,8 @@ function endOver(){
 }
 
 /* ==========================================================================
-   6. ANIMATION LOOP
-   ========================================================================== */
+  6. ANIMATION LOOP
+  ========================================================================== */
 let last = performance.now();
 function loop(now){
   const dt = Math.min(48, now - last); last = now;
@@ -869,93 +886,93 @@ function updateAnim(dt){
   let p = Math.min(1, anim.t / anim.dur);
 
   if (anim.phase === "runup"){
-    // bowler runs in, releases at 65%
-    bowler.x = 960 - 40 * (1 - easeOut(Math.min(1,p/0.65)));
-    if (p < 0.65){ ball.visible = false; return; }
-    ball.visible = true;
-    const q = (p - 0.65) / 0.35;
-    ball.x = anim.from.x + (anim.to.x - anim.from.x) * q;
-    ball.y = anim.from.y + (anim.to.y - anim.from.y) * q;
-    ball.z = Math.sin(Math.PI * q) * 14;
-    pushTrail();
-    if (p >= 1){
-      anim.phase = "flight"; anim.t = 0; anim.dur = 420;
-      anim.showBatSwing = 1;
-    }
-    return;
+  // bowler runs in, releases at 65%
+  bowler.x = 960 - 40 * (1 - easeOut(Math.min(1,p/0.65)));
+  if (p < 0.65){ ball.visible = false; return; }
+  ball.visible = true;
+  const q = (p - 0.65) / 0.35;
+  ball.x = anim.from.x + (anim.to.x - anim.from.x) * q;
+  ball.y = anim.from.y + (anim.to.y - anim.from.y) * q;
+  ball.z = Math.sin(Math.PI * q) * 14;
+  pushTrail();
+  if (p >= 1){
+  anim.phase = "flight"; anim.t = 0; anim.dur = 420;
+  anim.showBatSwing = 1;
+  }
+  return;
   }
 
   if (anim.phase === "flight"){
-    // ball reaches the bat
-    const q = easeOut(p);
-    ball.x = anim.to.x; ball.y = anim.to.y; ball.z = 14 * (1-p);
-    anim.showBatSwing = 1 - p;
-    pushTrail();
-    if (p >= 1){
-      anim.phase = "shot"; anim.t = 0;
-      anim.dur = (anim.runs >= 4) ? 900 : 620;
-      anim.from = { x: striker.x + 20, y: striker.y - 22 };
-      if (anim.chaseFielder) anim.chaseFielder.react = 1;
-      // all fielders react slightly
-      FIELDERS.forEach(f => { if (f !== anim.chaseFielder) f.react = Math.max(f.react, .35); });
-    }
-    return;
+  // ball reaches the bat
+  const q = easeOut(p);
+  ball.x = anim.to.x; ball.y = anim.to.y; ball.z = 14 * (1-p);
+  anim.showBatSwing = 1 - p;
+  pushTrail();
+  if (p >= 1){
+  anim.phase = "shot"; anim.t = 0;
+  anim.dur = (anim.runs >= 4) ? 900 : 620;
+  anim.from = { x: striker.x + 20, y: striker.y - 22 };
+  if (anim.chaseFielder) anim.chaseFielder.react = 1;
+  // all fielders react slightly
+  FIELDERS.forEach(f => { if (f !== anim.chaseFielder) f.react = Math.max(f.react, .35); });
+  }
+  return;
   }
 
   if (anim.phase === "shot"){
-    const q = easeOut(p);
-    ball.x = anim.from.x + (anim.to2.x - anim.from.x) * q;
-    ball.y = anim.from.y + (anim.to2.y - anim.from.y) * q;
-    ball.z = Math.sin(Math.PI * q) * anim.arc2;
-    pushTrail();
-    if (p >= 1){
-      if (anim.runs > 0 && !anim.battersSwapped){
-        anim.phase = "running"; anim.t = 0; anim.dur = 480 * Math.min(3, anim.runs);
-        runPhase = 0;
-      } else {
-        anim.phase = "idle";
-        ball.visible = false;
-        bowler.x = 960;
-      }
-    }
-    return;
+  const q = easeOut(p);
+  ball.x = anim.from.x + (anim.to2.x - anim.from.x) * q;
+  ball.y = anim.from.y + (anim.to2.y - anim.from.y) * q;
+  ball.z = Math.sin(Math.PI * q) * anim.arc2;
+  pushTrail();
+  if (p >= 1){
+  if (anim.runs > 0 && !anim.battersSwapped){
+  anim.phase = "running"; anim.t = 0; anim.dur = 480 * Math.min(3, anim.runs);
+  runPhase = 0;
+  } else {
+  anim.phase = "idle";
+  ball.visible = false;
+  bowler.x = 960;
+  }
+  }
+  return;
   }
 
   if (anim.phase === "running"){
-    runPhase += dt / 260;
-    if (p >= 1){
-      anim.battersSwapped = true;
-      anim.phase = "idle";
-      ball.visible = false;
-      bowler.x = 960;
-      FIELDERS.forEach(f => { f.react = 0; });
-    }
-    return;
+  runPhase += dt / 260;
+  if (p >= 1){
+  anim.battersSwapped = true;
+  anim.phase = "idle";
+  ball.visible = false;
+  bowler.x = 960;
+  FIELDERS.forEach(f => { f.react = 0; });
+  }
+  return;
   }
 }
 
 let runPhase = 0;
 function updateFielders(dt){
   FIELDERS.forEach(f => {
-    let tx = f.hx, ty = f.hy;
-    if (anim.phase === "shot" || anim.phase === "running"){
-      if (f === anim.chaseFielder && anim.to2){
-        const d = Math.hypot(f.hx - anim.to2.x, f.hy - anim.to2.y);
-        const k = Math.min(.72, 260 / Math.max(60, d));
-        tx = f.hx + (anim.to2.x - f.hx) * k;
-        ty = f.hy + (anim.to2.y - f.hy) * k;
-        f.react = 1;
-      } else if (f.react > 0){
-        const dx = anim.to2 ? (anim.to2.x - f.hx) : 0;
-        const dy = anim.to2 ? (anim.to2.y - f.hy) : 0;
-        const dd = Math.max(1, Math.hypot(dx,dy));
-        tx = f.hx + (dx/dd) * 26 * f.react;
-        ty = f.hy + (dy/dd) * 26 * f.react;
-      }
-    }
-    f.x += (tx - f.x) * Math.min(1, dt/150);
-    f.y += (ty - f.y) * Math.min(1, dt/150);
-    if (anim.phase === "idle") f.react *= 0.92;
+  let tx = f.hx, ty = f.hy;
+  if (anim.phase === "shot" || anim.phase === "running"){
+  if (f === anim.chaseFielder && anim.to2){
+  const d = Math.hypot(f.hx - anim.to2.x, f.hy - anim.to2.y);
+  const k = Math.min(.72, 260 / Math.max(60, d));
+  tx = f.hx + (anim.to2.x - f.hx) * k;
+  ty = f.hy + (anim.to2.y - f.hy) * k;
+  f.react = 1;
+  } else if (f.react > 0){
+  const dx = anim.to2 ? (anim.to2.x - f.hx) : 0;
+  const dy = anim.to2 ? (anim.to2.y - f.hy) : 0;
+  const dd = Math.max(1, Math.hypot(dx,dy));
+  tx = f.hx + (dx/dd) * 26 * f.react;
+  ty = f.hy + (dy/dd) * 26 * f.react;
+  }
+  }
+  f.x += (tx - f.x) * Math.min(1, dt/150);
+  f.y += (ty - f.y) * Math.min(1, dt/150);
+  if (anim.phase === "idle") f.react *= 0.92;
   });
 }
 
@@ -969,9 +986,9 @@ function drawBall(){
   const c = ctx;
   // trail
   for (let i=0;i<ball.trail.length;i++){
-    const t = ball.trail[i], a = i / ball.trail.length;
-    c.fillStyle = "rgba(255,255,255," + (a*0.30).toFixed(3) + ")";
-    c.beginPath(); c.arc(t.x, t.y, 2 + a*4, 0, Math.PI*2); c.fill();
+  const t = ball.trail[i], a = i / ball.trail.length;
+  c.fillStyle = "rgba(255,255,255," + (a*0.30).toFixed(3) + ")";
+  c.beginPath(); c.arc(t.x, t.y, 2 + a*4, 0, Math.PI*2); c.fill();
   }
   // shadow
   c.fillStyle = "rgba(0,0,0,.35)";
@@ -987,8 +1004,35 @@ function drawBall(){
 }
 
 function drawFielders(){
+  // Ball jis fielder ki taraf ja rahi ho, woh chamak uthe — aur uski position
+  // ka label dikhe. (Individual fielder ke NAAM Cricbuzz deta hi nahi, isliye
+  // hum position dikhate hain, koi andaza nahi lagate.)
   FIELDERS.forEach(f => {
-    drawPlayer(ctx, f, { color:"#e8eef5", skin:"#e8b98d", scale:.9 });
+  let hl = 0;
+  if (ball.visible){
+  const d = Math.hypot(f.x - ball.x, f.y - (ball.y - ball.z));
+  if (d < 210) hl = 1 - d / 210;
+  }
+  if (hl > f.react) f.react = hl; else f.react *= 0.90;  // dheere-dheere bujhe
+  const r = f.react;
+  if (r > 0.02){
+  drawPlayer(ctx, f, {
+  color: r > 0.35 ? "#ffd75e" : "#e8eef5",
+  skin: "#e8b98d",
+  scale: 0.9 + r * 0.20
+  });
+  if (r > 0.18){
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, r * 1.7);
+  ctx.fillStyle = "#ffd75e";
+  ctx.font = "900 16px system-ui,sans-serif";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(f.name || f.id, f.x, f.y - 74);
+  ctx.restore();
+  }
+  } else {
+  drawPlayer(ctx, f, { color:"#e8eef5", skin:"#e8b98d", scale:.9 });
+  }
   });
 }
 
@@ -1001,19 +1045,19 @@ function drawBatsmen(){
   // swap animation
   let sx = striker.x, sy = striker.y, nx = nonStriker.x, ny = nonStriker.y;
   if (anim.phase === "running"){
-    const m = Math.abs(Math.sin(runPhase * Math.PI));
-    const k = Math.floor(runPhase);
-    const cur = (k % 2 === 0) ? m : 1 - m;
-    sx = striker.x + (nonStriker.x - striker.x) * cur;
-    sy = striker.y + (nonStriker.y - striker.y) * cur;
-    nx = nonStriker.x + (striker.x - nonStriker.x) * cur;
-    ny = nonStriker.y + (striker.y - nonStriker.y) * cur;
+  const m = Math.abs(Math.sin(runPhase * Math.PI));
+  const k = Math.floor(runPhase);
+  const cur = (k % 2 === 0) ? m : 1 - m;
+  sx = striker.x + (nonStriker.x - striker.x) * cur;
+  sy = striker.y + (nonStriker.y - striker.y) * cur;
+  nx = nonStriker.x + (striker.x - nonStriker.x) * cur;
+  ny = nonStriker.y + (striker.y - nonStriker.y) * cur;
   }
-  drawPlayer(ctx, { x:nx, y:ny, num:nonStriker.num, name:nonStriker.name },
-    { color:"#0a4bd6", bat:true, helmet:true, legs: runPhase*2.4, scale:1.05 });
-  drawPlayer(ctx, { x:sx, y:sy, num:striker.num, name:striker.name },
-    { color:"#0a4bd6", bat:true, helmet:true, legs: runPhase*2.4 + 1,
-      batAng: (anim.showBatSwing ? -0.9 + anim.showBatSwing*1.2 : 0.35), scale:1.05 });
+  drawPlayer(ctx, { x:nx, y:ny, name:nonStriker.name },
+  { color:"#0a4bd6", bat:true, helmet:true, legs: runPhase*2.4, scale:1.05 });
+  drawPlayer(ctx, { x:sx, y:sy, name:striker.name },
+  { color:"#0a4bd6", bat:true, helmet:true, legs: runPhase*2.4 + 1,
+  batAng: (anim.showBatSwing ? -0.9 + anim.showBatSwing*1.2 : 0.35), scale:1.05 });
   if (anim.phase !== "running") runPhase = 0;
 }
 
@@ -1025,8 +1069,8 @@ function drawUmpireKeeper(){
 requestAnimationFrame(loop);
 
 /* ==========================================================================
-   7. DOM RENDERING
-   ========================================================================== */
+  7. DOM RENDERING
+  ========================================================================== */
 const $ = id => document.getElementById(id);
 
 function oversText(balls){ return Math.floor(balls/6) + "." + (balls%6); }
@@ -1042,19 +1086,19 @@ function renderAll(){
   const oversDone = b.balls / 6;
   // Prefer the server-computed rates; fall back to local maths in demo mode.
   const crr  = (typeof S.crr === "number" && S.crr > 0) ? S.crr
-             : (oversDone > 0 ? (b.score / oversDone) : 0);
+  : (oversDone > 0 ? (b.score / oversDone) : 0);
   $("hCrr").textContent = crr.toFixed(2);
 
   if (S.match.chase){
-    const need = (typeof S.need === "number") ? S.need : Math.max(0, S.target - b.score);
-    const left = (typeof S.ballsLeft === "number") ? S.ballsLeft
-               : Math.max(0, b.maxOvers*6 - b.balls);
-    const rrr  = (typeof S.rrr === "number" && S.rrr > 0) ? S.rrr
-               : (left > 0 ? (need / (left/6)) : 0);
-    $("hRrr").textContent  = rrr.toFixed(2);
-    $("hNeed").textContent = need + " off " + left;
+  const need = (typeof S.need === "number") ? S.need : Math.max(0, S.target - b.score);
+  const left = (typeof S.ballsLeft === "number") ? S.ballsLeft
+  : Math.max(0, b.maxOvers*6 - b.balls);
+  const rrr  = (typeof S.rrr === "number" && S.rrr > 0) ? S.rrr
+  : (left > 0 ? (need / (left/6)) : 0);
+  $("hRrr").textContent  = rrr.toFixed(2);
+  $("hNeed").textContent = need + " off " + left;
   } else {
-    $("hRrr").textContent = "—"; $("hNeed").textContent = "—";
+  $("hRrr").textContent = "—"; $("hNeed").textContent = "—";
   }
 
   // scorebar
@@ -1067,11 +1111,21 @@ function renderAll(){
   $("sBat1").innerHTML = S.striker.name + " <b>" + S.striker.runs + "</b>(" + S.striker.balls + ")";
   $("sBat2").innerHTML = S.nonStriker.name + " <b>" + S.nonStriker.runs + "</b>(" + S.nonStriker.balls + ")";
   $("sBowl").innerHTML = S.bowler.name + " <b>" + ballsFig(S.bowler.balls) + "-" +
-                          S.bowler.md + "-" + S.bowler.runs + "-" + S.bowler.wkts + "</b>";
+  S.bowler.md + "-" + S.bowler.runs + "-" + S.bowler.wkts + "</b>";
   const econ = S.bowler.balls > 0 ? (S.bowler.runs / (S.bowler.balls/6)) : 0;
   const ovRuns = S.thisOver.reduce((a,x) => a + (x === "W" ? 0 : (isNaN(+x) ? 1 : +x)), 0);
   $("sEcon").innerHTML = "Economy <b>" + econ.toFixed(2) + "</b> · This over <b>" + ovRuns + "</b>";
   $("sLast10").textContent = S.last10;
+
+  // live countdown — chase chal raha ho to dikhega, warna chhup jayega
+  if (S.target > 0 && S.need > 0 && S.ballsLeft > 0){
+  $("countdown").classList.remove("hide");
+  rollNumber($("cdRuns"), S.need);
+  $("cdBalls").textContent = S.ballsLeft;
+  $("cdRrr").textContent = S.rrr.toFixed(2);
+  } else {
+  $("countdown").classList.add("hide");
+  }
 
   renderBalls("thisOver", S.thisOver);
   renderBalls("lastOver", S.lastOver);
@@ -1088,17 +1142,17 @@ function renderBalls(el, arr){
   const host = $(el);
   host.innerHTML = "";
   arr.slice(0,6).forEach(x => {
-    const d = document.createElement("div");
-    d.className = "ball " + ballClass(x);
-    d.textContent = x;
-    host.appendChild(d);
+  const d = document.createElement("div");
+  d.className = "ball " + ballClass(x);
+  d.textContent = x;
+  host.appendChild(d);
   });
   for (let i = arr.length; i < 6; i++){
-    const d = document.createElement("div");
-    d.className = "ball b0";
-    d.style.opacity = ".3";
-    d.textContent = "•";
-    host.appendChild(d);
+  const d = document.createElement("div");
+  d.className = "ball b0";
+  d.style.opacity = ".3";
+  d.textContent = "•";
+  host.appendChild(d);
   }
 }
 
@@ -1106,7 +1160,7 @@ function setCommentary(hi, en){
   if (hi){ S.commentary_hi = hi; S.commentary_en = en || ""; }
   const el = $("comm");
   el.innerHTML = esc(S.commentary_hi) +
-    (S.commentary_en ? ' <span class="en">· ' + esc(S.commentary_en) + '</span>' : "");
+  (S.commentary_en ? ' <span class="en">· ' + esc(S.commentary_en) + '</span>' : "");
 }
 function esc(s){ return String(s).replace(/[&<>"]/g, m =>
   ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m])); }
@@ -1131,15 +1185,15 @@ function showOverCard(o){
   const tl = $("ocTimeline");
   tl.innerHTML = "";
   o.timeline.forEach((x,i) => {
-    const d = document.createElement("div");
-    d.className = "tl " + (x === "W" ? "bW" : "b" + Math.min(6, parseInt(x,10) || 0));
-    d.textContent = x;
-    d.style.animation = "popIn .4s cubic-bezier(.2,1.5,.4,1) " + (i*0.07) + "s backwards";
-    tl.appendChild(d);
+  const d = document.createElement("div");
+  d.className = "tl " + (x === "W" ? "bW" : "b" + Math.min(6, parseInt(x,10) || 0));
+  d.textContent = x;
+  d.style.animation = "popIn .4s cubic-bezier(.2,1.5,.4,1) " + (i*0.07) + "s backwards";
+  tl.appendChild(d);
   });
   $("ocBowler").textContent = S.bowler.name;
   $("ocBowlerFig").textContent = ballsFig(S.bowler.balls) + "-" + S.bowler.md + "-" +
-                                 S.bowler.runs + "-" + S.bowler.wkts;
+  S.bowler.runs + "-" + S.bowler.wkts;
   $("ocBat1").textContent = S.striker.name;
   $("ocBat1Fig").textContent = S.striker.runs + " (" + S.striker.balls + ")";
   $("ocBat2").textContent = S.nonStriker.name;
@@ -1151,8 +1205,8 @@ function showOverCard(o){
   $("overCard").classList.add("show");
   clearTimeout(cardTimer);
   cardTimer = setTimeout(() => {
-    $("overCard").classList.remove("show");
-    $("canvasWrap").classList.remove("blurred");
+  $("overCard").classList.remove("show");
+  $("canvasWrap").classList.remove("blurred");
   }, 8000);
 }
 
@@ -1164,19 +1218,19 @@ setInterval(() => {
 }, 2200);
 
 /* ==========================================================================
-   7b. WAGON WHEEL
-   Angles are degrees from straight-down-the-ground (0), clockwise = off side.
-   ========================================================================== */
+  7b. WAGON WHEEL
+  Angles are degrees from straight-down-the-ground (0), clockwise = off side.
+  ========================================================================== */
 const WAGON = [];
 const SHOT_ANGLE = {
-  SHOT_STRAIGHT:   0,
-  SHOT_DRIVE:     40,
-  SHOT_CUT:       78,
-  SHOT_SIX:       14,
-  SHOT_PULL:     -62,
-  SHOT_HOOK:     -95,
-  SHOT_FLICK:    -32,
-  SHOT_SWEEP:   -105
+  SHOT_STRAIGHT:  0,
+  SHOT_DRIVE:  40,
+  SHOT_CUT:  78,
+  SHOT_SIX:  14,
+  SHOT_PULL:  -62,
+  SHOT_HOOK:  -95,
+  SHOT_FLICK:  -32,
+  SHOT_SWEEP:  -105
 };
 const wagonCv = document.getElementById("wagon");
 const wctx = wagonCv.getContext("2d");
@@ -1206,24 +1260,24 @@ function drawWagon(){
   c.fillStyle = "rgba(255,255,255,.85)"; c.fillRect(cx-22, cy+38, 44, 3);
   // spokes
   for (let i=0;i<8;i++){
-    const th = (i/8)*Math.PI*2;
-    c.strokeStyle = "rgba(255,255,255,.10)"; c.lineWidth = 1;
-    c.beginPath(); c.moveTo(cx,cy);
-    c.lineTo(cx+Math.sin(th)*R, cy-Math.cos(th)*R); c.stroke();
+  const th = (i/8)*Math.PI*2;
+  c.strokeStyle = "rgba(255,255,255,.10)"; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(cx,cy);
+  c.lineTo(cx+Math.sin(th)*R, cy-Math.cos(th)*R); c.stroke();
   }
   // shots
   WAGON.forEach((s, i) => {
-    const th = s.a * Math.PI/180;
-    const len = R * (s.r >= 4 ? 0.97 : (0.42 + s.r*0.12));
-    const x2 = cx + Math.sin(th)*len, y2 = cy - Math.cos(th)*len;
-    c.strokeStyle = s.r >= 6 ? "#c08bff" : s.r === 4 ? "#ffcc33"
-                  : s.r === 3 ? "#3ef0a0" : s.r === 2 ? "#2ee08a" : "#7fe3b0";
-    c.lineWidth = s.r >= 4 ? 5 : 3;
-    c.globalAlpha = 0.45 + 0.55 * (i / Math.max(1, WAGON.length));
-    c.beginPath(); c.moveTo(cx,cy); c.lineTo(x2,y2); c.stroke();
-    c.fillStyle = c.strokeStyle;
-    c.beginPath(); c.arc(x2,y2, s.r >= 4 ? 5 : 3.5, 0, Math.PI*2); c.fill();
-    c.globalAlpha = 1;
+  const th = s.a * Math.PI/180;
+  const len = R * (s.r >= 4 ? 0.97 : (0.42 + s.r*0.12));
+  const x2 = cx + Math.sin(th)*len, y2 = cy - Math.cos(th)*len;
+  c.strokeStyle = s.r >= 6 ? "#c08bff" : s.r === 4 ? "#ffcc33"
+  : s.r === 3 ? "#3ef0a0" : s.r === 2 ? "#2ee08a" : "#7fe3b0";
+  c.lineWidth = s.r >= 4 ? 5 : 3;
+  c.globalAlpha = 0.45 + 0.55 * (i / Math.max(1, WAGON.length));
+  c.beginPath(); c.moveTo(cx,cy); c.lineTo(x2,y2); c.stroke();
+  c.fillStyle = c.strokeStyle;
+  c.beginPath(); c.arc(x2,y2, s.r >= 4 ? 5 : 3.5, 0, Math.PI*2); c.fill();
+  c.globalAlpha = 1;
   });
   // total
   const tot = WAGON.reduce((a,b)=>a+b.r,0);
@@ -1235,21 +1289,21 @@ function drawWagon(){
 drawWagon();
 
 /* ==========================================================================
-   7c. MILESTONE CARD + SCORE ROLL
-   ========================================================================== */
+  7c. MILESTONE CARD + SCORE ROLL
+  ========================================================================== */
 let msTimer = null;
 function showMilestone(ms){
   const who = ms.kind === "bowl" ? (S.bowler ? S.bowler.name : "")
-                                 : (S.striker ? S.striker.name : "");
+  : (S.striker ? S.striker.name : "");
   $("msK").textContent = ms.kind === "bowl" ? "BOWLING MILESTONE" : "MILESTONE";
   $("msV").textContent = ms.kind === "bowl"
-      ? ms.value + " W"
-      : (ms.label === "FIFTY" || ms.label === "HUNDRED" ? ms.value : ms.value);
+  ? ms.value + " W"
+  : (ms.label === "FIFTY" || ms.label === "HUNDRED" ? ms.value : ms.value);
   $("msN").textContent = who || "";
   $("msS").textContent = ms.kind === "bowl"
-      ? (S.bowler ? S.bowler.overs + " overs" : "")
-      : (S.striker ? S.striker.runs + " runs · " + S.striker.balls + " balls · "
-          + S.striker.fours + "x4 · " + S.striker.sixes + "x6" : "");
+  ? (S.bowler ? S.bowler.overs + " overs" : "")
+  : (S.striker ? S.striker.runs + " runs · " + S.striker.balls + " balls · "
+  + S.striker.fours + "x4 · " + S.striker.sixes + "x6" : "");
   const el = $("msCard");
   el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
   clearTimeout(msTimer);
@@ -1262,24 +1316,24 @@ function rollNumber(el, to){
   if (from === to){ el.textContent = to; return; }
   const dur = 420, t0 = performance.now();
   function tick(now){
-    const p = Math.min(1, (now - t0)/dur);
-    const v = Math.round(from + (to - from) * (1 - Math.pow(1-p,3)));
-    el.textContent = v;
-    if (p < 1) requestAnimationFrame(tick);
+  const p = Math.min(1, (now - t0)/dur);
+  const v = Math.round(from + (to - from) * (1 - Math.pow(1-p,3)));
+  el.textContent = v;
+  if (p < 1) requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
 }
 
 /* ==========================================================================
-   8. AUDIO ENGINE  (browser-side: TTS playback + BGM + SFX + auto-ducking)
-   --------------------------------------------------------------------------
-   The Python backend only *creates* MP3s (edge-tts). Everything audible
-   happens here, which is why no virtual sound card is needed on the server.
+  8. AUDIO ENGINE  (browser-side: TTS playback + BGM + SFX + auto-ducking)
+  --------------------------------------------------------------------------
+  The Python backend only *creates* MP3s (edge-tts). Everything audible
+  happens here, which is why no virtual sound card is needed on the server.
 
-   DUCKING: background music sits at 100% (bgmBase). The moment a Hindi
-   commentary clip or a sound effect starts, BGM drops to 20% within 120 ms
-   and eases back to 100% when it finishes.
-   ========================================================================== */
+  DUCKING: background music sits at 100% (bgmBase). The moment a Hindi
+  commentary clip or a sound effect starts, BGM drops to 20% within 120 ms
+  and eases back to 100% when it finishes.
+  ========================================================================== */
 const Audio_ = {
   started:false, on:false, ctx:null,
   master:null, bgmGain:null, sfxGain:null, voiceGain:null, ambGain:null,
@@ -1298,33 +1352,33 @@ function initAudio(){
   Audio_.master = ac.createGain(); Audio_.master.gain.value = 0.95;
   Audio_.master.connect(ac.destination);
 
-  Audio_.bgmGain   = ac.createGain(); Audio_.bgmGain.gain.value = Audio_.bgmBase;
+  Audio_.bgmGain  = ac.createGain(); Audio_.bgmGain.gain.value = Audio_.bgmBase;
   Audio_.bgmGain.connect(Audio_.master);
 
-  Audio_.sfxGain   = ac.createGain(); Audio_.sfxGain.gain.value   = 0.9;
+  Audio_.sfxGain  = ac.createGain(); Audio_.sfxGain.gain.value  = 0.9;
   Audio_.voiceGain = ac.createGain(); Audio_.voiceGain.gain.value = 1.0;
   Audio_.sfxGain.connect(Audio_.master);
   Audio_.voiceGain.connect(Audio_.master);
 
   // ---- background music (real file if the server has one) -----------------
   if (Audio_.assets.bgm && Audio_.assets.bgm.length){
-    const el = new Audio(Audio_.assets.bgm[0]);
-    el.loop = true; el.preload = "auto"; el.volume = 1.0;
-    try {
-      const src = ac.createMediaElementSource(el);
-      src.connect(Audio_.bgmGain);
-      Audio_.bgmEl = el;
-    } catch(e){ console.warn("bgm routing failed", e); }
+  const el = new Audio(Audio_.assets.bgm[0]);
+  el.loop = true; el.preload = "auto"; el.volume = 1.0;
+  try {
+  const src = ac.createMediaElementSource(el);
+  src.connect(Audio_.bgmGain);
+  Audio_.bgmEl = el;
+  } catch(e){ console.warn("bgm routing failed", e); }
   } else {
-    startAmbience(ac);          // synthesised stadium bed as a fallback
+  startAmbience(ac);  // synthesised stadium bed as a fallback
   }
 
   // ---- Hindi commentary player --------------------------------------------
   const v = new Audio();
   v.preload = "auto";
   try {
-    const vsrc = ac.createMediaElementSource(v);
-    vsrc.connect(Audio_.voiceGain);
+  const vsrc = ac.createMediaElementSource(v);
+  vsrc.connect(Audio_.voiceGain);
   } catch(e){ /* playback still works, just without ducking */ }
   v.addEventListener("ended", () => { Audio_.speaking = false; unduck(700); nextVoice(); });
   v.addEventListener("error", () => { Audio_.speaking = false; unduck(400); nextVoice(); });
@@ -1339,9 +1393,9 @@ function startAmbience(ac){
   const d = buf.getChannelData(0);
   let lastV = 0;
   for (let i=0;i<len;i++){
-    const white = Math.random()*2 - 1;
-    lastV = (lastV + 0.02*white) / 1.02;
-    d[i] = lastV * 3.0;
+  const white = Math.random()*2 - 1;
+  lastV = (lastV + 0.02*white) / 1.02;
+  d[i] = lastV * 3.0;
   }
   const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
   const lp = ac.createBiquadFilter(); lp.type="lowpass";  lp.frequency.value=900;
@@ -1359,7 +1413,7 @@ function duck(holdMs){
   Audio_.ducked = true;
   g.cancelScheduledValues(t);
   g.setValueAtTime(Math.max(0.0001, g.value), t);
-  g.linearRampToValueAtTime(base * Audio_.duckDepth, t + 0.12);      // -> 20%
+  g.linearRampToValueAtTime(base * Audio_.duckDepth, t + 0.12);  // -> 20%
   g.setValueAtTime(base * Audio_.duckDepth, t + Math.max(0.2, (holdMs||1200)/1000));
   g.linearRampToValueAtTime(base, t + Math.max(0.2,(holdMs||1200)/1000) + 0.75); // -> 100%
 }
@@ -1380,47 +1434,47 @@ function sfx(ev){
   let url = null;
   for (const n of want){ if (Audio_.assets.sfx[n]) { url = Audio_.assets.sfx[n]; break; } }
   if (url){
-    const a = new Audio(url);
-    a.volume = 0.85;
-    try { Audio_.ctx.createMediaElementSource(a).connect(Audio_.sfxGain); } catch(e){}
-    a.play().catch(()=>{});
-    duck(1300);
-    setTimeout(()=>{ if (!Audio_.speaking) unduck(600); }, 1500);
-    return;
+  const a = new Audio(url);
+  a.volume = 0.85;
+  try { Audio_.ctx.createMediaElementSource(a).connect(Audio_.sfxGain); } catch(e){}
+  a.play().catch(()=>{});
+  duck(1300);
+  setTimeout(()=>{ if (!Audio_.speaking) unduck(600); }, 1500);
+  return;
   }
-  synthSfx(ev);                       // no asset uploaded -> synthesise
+  synthSfx(ev);  // no asset uploaded -> synthesise
 }
 
 function synthSfx(ev){
   if (!Audio_.on || !Audio_.ctx) return;
   const ac = Audio_.ctx;
   function tone(freq,dur,type,vol,when){
-    const t = ac.currentTime + (when||0);
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.type = type||"sine"; o.frequency.setValueAtTime(freq,t);
-    g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(vol||0.25,t+0.02);
-    g.gain.exponentialRampToValueAtTime(0.001,t+dur);
-    o.connect(g); g.connect(Audio_.sfxGain); o.start(t); o.stop(t+dur+0.05);
+  const t = ac.currentTime + (when||0);
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type||"sine"; o.frequency.setValueAtTime(freq,t);
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol||0.25,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+  o.connect(g); g.connect(Audio_.sfxGain); o.start(t); o.stop(t+dur+0.05);
   }
   function noise(dur,f0,f1,vol){
-    const t = ac.currentTime, len = Math.floor(ac.sampleRate*dur);
-    const buf = ac.createBuffer(1,len,ac.sampleRate), d = buf.getChannelData(0);
-    for (let i=0;i<len;i++) d[i] = (Math.random()*2-1)*(1-i/len);
-    const src = ac.createBufferSource(); src.buffer = buf;
-    const bp = ac.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=1.1;
-    bp.frequency.setValueAtTime(f0,t);
-    bp.frequency.exponentialRampToValueAtTime(f1,t+dur);
-    const g = ac.createGain(); g.gain.value = vol||0.35;
-    src.connect(bp); bp.connect(g); g.connect(Audio_.sfxGain); src.start(t);
+  const t = ac.currentTime, len = Math.floor(ac.sampleRate*dur);
+  const buf = ac.createBuffer(1,len,ac.sampleRate), d = buf.getChannelData(0);
+  for (let i=0;i<len;i++) d[i] = (Math.random()*2-1)*(1-i/len);
+  const src = ac.createBufferSource(); src.buffer = buf;
+  const bp = ac.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=1.1;
+  bp.frequency.setValueAtTime(f0,t);
+  bp.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  const g = ac.createGain(); g.gain.value = vol||0.35;
+  src.connect(bp); bp.connect(g); g.connect(Audio_.sfxGain); src.start(t);
   }
   if (ev === "six"){ noise(0.18,2600,700,.5); setTimeout(()=>tone(1200,.5,"square",.12),60);
-                     setTimeout(()=>noise(1.5,700,260,.35),200); }
+  setTimeout(()=>noise(1.5,700,260,.35),200); }
   else if (ev === "four"){ noise(0.15,2200,800,.45);
-                     setTimeout(()=>{tone(2100,.18,"square",.10);tone(2600,.18,"square",.09,0.16);},80);
-                     setTimeout(()=>noise(1.0,600,260,.28),220); }
+  setTimeout(()=>{tone(2100,.18,"square",.10);tone(2600,.18,"square",.09,0.16);},80);
+  setTimeout(()=>noise(1.0,600,260,.28),220); }
   else if (ev === "wicket"){ tone(2600,.14,"square",.14); tone(3200,.14,"square",.13,0.18);
-                     setTimeout(()=>noise(1.6,900,200,.38),220); }
+  setTimeout(()=>noise(1.6,900,200,.38),220); }
   else { noise(0.09,1800,900,.18); }
   duck(1200);
 }
@@ -1449,19 +1503,19 @@ function nextVoice(){
 function speakFallback(text){
   if (!text || !window.speechSynthesis) return;
   try {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = "hi-IN"; u.rate = 1.08; u.pitch = 1.05;
-    const vs = window.speechSynthesis.getVoices();
-    for (const v of vs){ if (/hi[-_]IN/i.test(v.lang)){ u.voice = v; break; } }
-    u.onstart = () => duck(1500);
-    u.onend   = () => unduck(700);
-    window.speechSynthesis.speak(u);
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = "hi-IN"; u.rate = 1.08; u.pitch = 1.05;
+  const vs = window.speechSynthesis.getVoices();
+  for (const v of vs){ if (/hi[-_]IN/i.test(v.lang)){ u.voice = v; break; } }
+  u.onstart = () => duck(1500);
+  u.onend  = () => unduck(700);
+  window.speechSynthesis.speak(u);
   } catch(e){}
 }
 
 /* ==========================================================================
-   9b. AUDIO UNLOCK GATE  (required on Android / tablet)
-   ========================================================================== */
+  9b. AUDIO UNLOCK GATE  (required on Android / tablet)
+  ========================================================================== */
 const AUTO_START = /[?&]auto=1/.test(location.search);
 let gateDone = false;
 
@@ -1483,8 +1537,8 @@ $("gate").addEventListener("touchstart", startAll, { passive:true });
 if (AUTO_START) startAll();
 
 /* ==========================================================================
-   10. LIVE MODE (REST bootstrap + WebSocket) and DEMO FALLBACK
-   ========================================================================== */
+  10. LIVE MODE (REST bootstrap + WebSocket) and DEMO FALLBACK
+  ========================================================================== */
 let ws = null, live = false, demoTimer = null, hasServer = false;
 
 function wsUrl(){
@@ -1494,15 +1548,15 @@ function wsUrl(){
 
 async function bootstrap(){
   try {
-    const r = await fetch("api/state", {cache:"no-store"});
-    if (!r.ok) throw new Error("state " + r.status);
-    const st = await r.json();
-    if (st && st.match){
-      hasServer = true;
-      applyState(st);
-      setCommentary(st.commentary_hi, st.commentary_en);
-      LOG_OK(" Bootstrap state loaded from server");
-    }
+  const r = await fetch("api/state", {cache:"no-store"});
+  if (!r.ok) throw new Error("state " + r.status);
+  const st = await r.json();
+  if (st && st.match){
+  hasServer = true;
+  applyState(st);
+  setCommentary(st.commentary_hi, st.commentary_en);
+  LOG_OK(" Bootstrap state loaded from server");
+  }
   } catch(e){ LOG_OK(" No REST state (demo/offline mode)"); }
   connectWS();
 }
@@ -1516,27 +1570,27 @@ function connectWS(){
   try { ws = new WebSocket(wsUrl()); } catch(e){ scheduleReconnect(); return; }
 
   ws.onopen = () => {
-    live = true; stopDemo(); hasServer = true;
-    reconnectDelay = 2000; connectFails = 0;
-    $("offline").classList.remove("show");
-    $("statusTxt").textContent = "LIVE";
-    $("status").classList.add("liveC");
-    $("pMode").textContent = "LIVE MODE";
-    $("pMode").style.background = "#e8112d";
+  live = true; stopDemo(); hasServer = true;
+  reconnectDelay = 2000; connectFails = 0;
+  $("offline").classList.remove("show");
+  $("statusTxt").textContent = "LIVE";
+  $("status").classList.add("liveC");
+  $("pMode").textContent = "LIVE MODE";
+  $("pMode").style.background = "#e8112d";
   };
   ws.onmessage = e => {
-    let m; try { m = JSON.parse(e.data); } catch(err){ return; }
-    handleMessage(m);
+  let m; try { m = JSON.parse(e.data); } catch(err){ return; }
+  handleMessage(m);
   };
   ws.onerror = () => {};
   ws.onclose = () => {
-    live = false;
-    $("statusTxt").textContent = "OFFLINE";
-    $("status").classList.remove("liveC");
-    $("pMode").textContent = "RECONNECTING";
-    $("offline").classList.add("show");
-    connectFails++;
-    scheduleReconnect();
+  live = false;
+  $("statusTxt").textContent = "OFFLINE";
+  $("status").classList.remove("liveC");
+  $("pMode").textContent = "RECONNECTING";
+  $("offline").classList.add("show");
+  connectFails++;
+  scheduleReconnect();
   };
 }
 
@@ -1553,41 +1607,41 @@ function scheduleReconnect(){
 
 function handleMessage(m){
   switch (m.type){
-    case "hello":
-      Audio_.assets = m.payload.assets || Audio_.assets;
-      applyBranding(m.payload.branding);
-      if (m.payload.state && m.payload.state.match) applyState(m.payload.state);
-      updateAssetPills();
-      break;
-    case "state":
-      applyState(m.payload);
-      break;
-    case "ball":
-      playBall(m.payload);
-      break;
-    case "tts":
-      setCommentary(m.payload.text || "", "");
-      if (Audio_.on && Audio_.started && Audio_.assets.tts !== false && m.payload.url){
-        speakUrl(m.payload.url, m.payload.text);
-      } else if (Audio_.on && m.payload.text){
-        // server TTS nahi mila -> device ki Hindi awaaz use karo
-        speakFallback(m.payload.text);
-      }
-      break;
-    case "milestone":
-      showMilestone(m.payload);
-      break;
-    case "sfx":
-      sfx(m.payload.name === "four" ? "four" : m.payload.name === "six" ? "six" : "wicket");
-      break;
-    case "over_end":
-      showOverCard(m.payload);
-      setCommentary(m.payload.text_hi || "", "");
-      break;
-    case "status":
-      $("pMode").textContent = (m.payload.mode || "live").toUpperCase() + " MODE";
-      if (m.payload.mode === "rehearse") $("pMode").style.background = "#b8530a";
-      break;
+  case "hello":
+  Audio_.assets = m.payload.assets || Audio_.assets;
+  applyBranding(m.payload.branding);
+  if (m.payload.state && m.payload.state.match) applyState(m.payload.state);
+  updateAssetPills();
+  break;
+  case "state":
+  applyState(m.payload);
+  break;
+  case "ball":
+  playBall(m.payload);
+  break;
+  case "tts":
+  setCommentary(m.payload.text || "", "");
+  if (Audio_.on && Audio_.started && Audio_.assets.tts !== false && m.payload.url){
+  speakUrl(m.payload.url, m.payload.text);
+  } else if (Audio_.on && m.payload.text){
+  // server TTS nahi mila -> device ki Hindi awaaz use karo
+  speakFallback(m.payload.text);
+  }
+  break;
+  case "milestone":
+  showMilestone(m.payload);
+  break;
+  case "sfx":
+  sfx(m.payload.name === "four" ? "four" : m.payload.name === "six" ? "six" : "wicket");
+  break;
+  case "over_end":
+  showOverCard(m.payload);
+  setCommentary(m.payload.text_hi || "", "");
+  break;
+  case "status":
+  $("pMode").textContent = (m.payload.mode || "live").toUpperCase() + " MODE";
+  if (m.payload.mode === "rehearse") $("pMode").style.background = "#b8530a";
+  break;
   }
 }
 
@@ -1595,27 +1649,27 @@ function handleMessage(m){
 function applyState(st){
   if (!st || !st.match) return;
   if (st.branding) applyBranding(st.branding);
-  if (st.match)    Object.assign(S.match, st.match);
+  if (st.match)  Object.assign(S.match, st.match);
   if (st.batting)  Object.assign(S.batting, st.batting);
   if (st.bowling)  S.bowling = st.bowling;
-  if (st.striker)     S.striker    = st.striker;
+  if (st.striker)  S.striker  = st.striker;
   if (st.nonStriker)  S.nonStriker = st.nonStriker;
-  if (st.bowler)      S.bowler     = st.bowler;
+  if (st.bowler)  S.bowler  = st.bowler;
   if (st.thisOver) S.thisOver = st.thisOver.slice(0,6);
   if (st.lastOver) S.lastOver = st.lastOver.slice(0,6);
   if (typeof st.target === "number")  S.target  = st.target;
-  if (typeof st.crr === "number")     S.crr     = st.crr;
-  if (typeof st.rrr === "number")     S.rrr     = st.rrr;
-  if (typeof st.need === "number")    S.need    = st.need;
+  if (typeof st.crr === "number")  S.crr  = st.crr;
+  if (typeof st.rrr === "number")  S.rrr  = st.rrr;
+  if (typeof st.need === "number")  S.need  = st.need;
   if (typeof st.ballsLeft === "number") S.ballsLeft = st.ballsLeft;
   if (typeof st.partnership === "number") S.partnership = st.partnership;
   if (st.commentary_hi) S.commentary_hi = st.commentary_hi;
   if (st.commentary_en) S.commentary_en = st.commentary_en;
 
   // keep the canvas jerseys in sync with the real players
-  if (S.striker){    striker.name    = shortName(S.striker.name);    striker.num = S.striker.num || 0; }
+  if (S.striker){  striker.name  = shortName(S.striker.name);  striker.num = S.striker.num || 0; }
   if (S.nonStriker){ nonStriker.name = shortName(S.nonStriker.hi || S.nonStriker.name); nonStriker.num = S.nonStriker.num || 0; }
-  if (S.bowler){     bowler.name     = shortName(S.bowler.hi || S.bowler.name); bowler.num = S.bowler.num || 0; }
+  if (S.bowler){  bowler.name  = shortName(S.bowler.hi || S.bowler.name); bowler.num = S.bowler.num || 0; }
 
   if (S.batting && S.batting.color) document.getElementById("teamChip").style.background = S.batting.color;
   renderAll();
@@ -1626,14 +1680,14 @@ function applyState(st){
 function applyBranding(b){
   if (!b) return;
   if (b.accent){
-    document.documentElement.style.setProperty("--accent", b.accent);
-    const m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute("content", b.accent);
+  document.documentElement.style.setProperty("--accent", b.accent);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute("content", b.accent);
   }
-  if (b.channel){ const e = document.querySelector("#brand .chan");   if (e) e.textContent = b.channel; }
+  if (b.channel){ const e = document.querySelector("#brand .chan");  if (e) e.textContent = b.channel; }
   if (b.handle){  const e = document.querySelector("#brand .handle");  if (e) e.textContent = b.handle; }
-  if (b.logo){    const e = document.querySelector("#brand .logo");    if (e) e.textContent = b.logo; }
-  if (b.tagline){ const e = document.querySelector(".brand-tag");      if (e) e.textContent = b.tagline; }
+  if (b.logo){  const e = document.querySelector("#brand .logo");  if (e) e.textContent = b.logo; }
+  if (b.tagline){ const e = document.querySelector(".brand-tag");  if (e) e.textContent = b.tagline; }
 }
 
 function shortName(n){
@@ -1645,8 +1699,8 @@ function updateAssetPills(){
   const a = Audio_.assets || {};
   const nBgm = (a.bgm || []).length, nSfx = Object.keys(a.sfx || {}).length;
   $("pSound").textContent = Audio_.on
-    ? ("SOUND ON · BGM " + nBgm + " · SFX " + nSfx)
-    : ("SOUND OFF · BGM " + nBgm + " · SFX " + nSfx);
+  ? ("SOUND ON · BGM " + nBgm + " · SFX " + nSfx)
+  : ("SOUND OFF · BGM " + nBgm + " · SFX " + nSfx);
 }
 
 /* --- Demo simulator --- */
@@ -1657,26 +1711,25 @@ function startDemo(){
   $("pMode").textContent = "DEMO MODE";
   $("statusTxt").textContent = "DEMO";
   const tick = () => {
-    const v = DEMO_SEQUENCE[di % DEMO_SEQUENCE.length]; di++;
-    if (v === "W"){
-      const c = pick(DEMO_COMMENTARY.WICKET);
-      playBall({ runs:0, wicket:true, event:"WICKET", shot:"SHOT_DRIVE",
-                 text_hi:c[0], text_en:c[1] });
-      // reset to a new batter (demo)
-      setTimeout(() => {
-        S.striker = { name:pick(["S IYER","R SHARMA","H PANDYA","S GILL"]),
-                      num:pick([41,45,33,77]), runs:0, balls:0, fours:0, sixes:0 };
-        striker.name = S.striker.name.split(" ").slice(-1)[0].toUpperCase();
-        striker.num  = S.striker.num;
-        S.partnership = 0; S.partBalls = 0;
-        renderAll();
-      }, 2200);
-    } else {
-      const ev = eventFromRuns(v, false);
-      const c = pick(DEMO_COMMENTARY[ev] || DEMO_COMMENTARY.DOT);
-      playBall({ runs:v, wicket:false, event:ev, text_hi:c[0], text_en:c[1] });
-    }
-    demoTimer = setTimeout(tick, 3600 + Math.random()*900);
+  const v = DEMO_SEQUENCE[di % DEMO_SEQUENCE.length]; di++;
+  if (v === "W"){
+  const c = pick(DEMO_COMMENTARY.WICKET);
+  playBall({ runs:0, wicket:true, event:"WICKET", shot:"SHOT_DRIVE",
+  text_hi:c[0], text_en:c[1] });
+  // reset to a new batter (demo)
+  setTimeout(() => {
+  S.striker = { name:pick(["S IYER","R SHARMA","H PANDYA","S GILL"]), runs:0, balls:0, fours:0, sixes:0 };
+  striker.name = S.striker.name.split(" ").slice(-1)[0].toUpperCase();
+  striker.num  = S.striker.num;
+  S.partnership = 0; S.partBalls = 0;
+  renderAll();
+  }, 2200);
+  } else {
+  const ev = eventFromRuns(v, false);
+  const c = pick(DEMO_COMMENTARY[ev] || DEMO_COMMENTARY.DOT);
+  playBall({ runs:v, wicket:false, event:ev, text_hi:c[0], text_en:c[1] });
+  }
+  demoTimer = setTimeout(tick, 3600 + Math.random()*900);
   };
   demoTimer = setTimeout(tick, 900);
 }
@@ -1686,9 +1739,9 @@ function stopDemo(){ clearTimeout(demoTimer); demoTimer = null; }
 renderAll();
 setCommentary(S.commentary_hi, S.commentary_en);
 if (location.protocol === "file:") {
-  startDemo();                       // opened straight from disk -> self-contained demo
+  startDemo();  // opened straight from disk -> self-contained demo
 } else {
-  bootstrap();                       // served by main.py -> REST + WebSocket
+  bootstrap();  // served by main.py -> REST + WebSocket
   setTimeout(() => { if (!live) { LOG_OK(" server not reachable -> demo"); startDemo(); } }, 4000);
 }
 setTimeout(() => $("help").classList.add("hide"), 8000);

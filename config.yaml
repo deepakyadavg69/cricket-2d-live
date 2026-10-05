@@ -68,3 +68,14 @@ overlay:
 server:
   host: "0.0.0.0"
   port: 8080            # Render/Koyeb inject $PORT, which always wins
+
+
+# ---------------------------------------------------------------------------
+# Playout buffer — stream ko smooth rakhne wali sabse zaroori setting.
+# Har event itne second baad hawa mein jata hai. Isse picture, scoreboard aur
+# commentary hamesha ek saath rehte hain (channel thoda late chalega, par
+# kabhi "alag alag" nahi lagega).
+# ---------------------------------------------------------------------------
+playout:
+  delay_seconds: 10.0      # kitni der baad dikhe (8-12 achha hai)
+  min_gap_seconds: 2.2     # do bade events ke beech kam se kam itna faasla
