@@ -273,6 +273,12 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   </div>
   </header>
 
+  <!-- ===== LEFT PANEL: ghoomti hui jaankari ===== -->
+  <div class="panel" id="leftPanel">
+    <div class="pcard" id="lp1"></div>
+    <div class="pcard" id="lp2"></div>
+  </div>
+
   <!-- ===== WAGON WHEEL ===== -->
   <div id="wagonWrap"><canvas id="wagon" width="264" height="264"></canvas>
   <div class="wlabel">WAGON WHEEL</div></div>
@@ -284,6 +290,11 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   <div class="ms-n" id="msN">PLAYER</div>
   <div class="ms-s" id="msS"></div>
   </div></div>
+
+  <!-- ===== RIGHT PANEL (wagon ke neeche) ===== -->
+  <div class="panel" id="rightPanel" style="top:372px;right:18px;width:236px">
+    <div class="pcard" id="rp1"></div>
+  </div>
 
   <!-- ===== BOUNDARY PULSE ===== -->
   <div id="pulse"></div>
@@ -370,8 +381,8 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
   <!-- ===== FOOTER BRAND ===== -->
   <div id="brand">
   <div class="logo">C</div>
-  <div class="chan">CRICKET 2D LIVE</div>
-  <div class="handle">@cricket2dlive</div>
+  <div class="chan" id="brandName">SPORTS GYAN</div>
+  <div class="handle" id="brandSub">@sportsgyanin</div>
   <div class="right">
   <div class="pill" id="pMode">DEMO MODE</div>
   <div class="pill" id="pSound">SOUND OFF</div>
@@ -683,6 +694,8 @@ function drawStumps(x,y){
 /* ==========================================================================
   5. BALL + ANIMATION ENGINE
   ========================================================================== */
+const GROUND_SCALE = 0.76;   // ground kitna bada dikhe (1.0 = poora canvas)
+
 const ball = { x:0, y:0, z:0, visible:false, trail:[] };
 
 const anim = {
@@ -870,6 +883,13 @@ function loop(now){
 
   updateFX(dt);
 
+  // Ground thoda chhota — kinaron par info panels ke liye jagah chahiye.
+  // Poora ground ek hi transform se scale hota hai, isliye fielder/batsman ke
+  // coordinates bilkul nahi badalne padte.
+  ctx.save();
+  const GS = GROUND_SCALE;
+  ctx.translate(G.w * (1 - GS) / 2, G.h * (1 - GS) / 2);
+  ctx.scale(GS, GS);
   drawGround();
   drawCrowd();
   drawFX();
@@ -878,6 +898,7 @@ function loop(now){
   drawBatsmen();
   drawUmpireKeeper();
   drawBall();
+  ctx.restore();
 
   requestAnimationFrame(loop);
 }
@@ -1272,8 +1293,12 @@ function renderAll(){
   $("sWkts").textContent = "-" + b.wkts;
   $("sOvers").textContent = "(" + oversText(b.balls) + ")";
 
-  $("sBat1").innerHTML = S.striker.name + " <b>" + S.striker.runs + "</b>(" + S.striker.balls + ")";
-  $("sBat2").innerHTML = S.nonStriker.name + " <b>" + S.nonStriker.runs + "</b>(" + S.nonStriker.balls + ")";
+  // STRIKE PAR KAUN HAI — ye sabse zaroori cheezon me se ek hai. S.striker
+  // hamesha strike wala hota hai, S.nonStriker doosre chhor par.
+  $("sBat1").innerHTML = S.striker.name + " <b>" + S.striker.runs + "</b>(" + S.striker.balls + ")"
+      + '<span class="strike">STRIKE</span>';
+  $("sBat2").innerHTML = S.nonStriker.name + " <b>" + S.nonStriker.runs + "</b>(" + S.nonStriker.balls + ")"
+      + '<span class="strike off">NON-STRIKE</span>';
   $("sBowl").innerHTML = S.bowler.name + " <b>" + ballsFig(S.bowler.balls) + "-" +
   S.bowler.md + "-" + S.bowler.runs + "-" + S.bowler.wkts + "</b>";
   const econ = S.bowler.balls > 0 ? (S.bowler.runs / (S.bowler.balls/6)) : 0;
@@ -1398,6 +1423,7 @@ const SHOT_ANGLE = {
 };
 const wagonCv = document.getElementById("wagon");
 const wctx = wagonCv.getContext("2d");
+const WSIZE = 236;
 
 function wagonAdd(shot, runs){
   if (runs <= 0) return;
@@ -1409,7 +1435,7 @@ function wagonAdd(shot, runs){
 }
 
 function drawWagon(){
-  const c = wctx, N = 264, cx = N/2, cy = N/2, R = N/2 - 10;
+  const c = wctx, N = WSIZE, cx = N/2, cy = N/2, R = N/2 - 10;
   c.clearRect(0,0,N,N);
   // ground
   const g = c.createRadialGradient(cx,cy,10,cx,cy,R);
@@ -1487,6 +1513,123 @@ function rollNumber(el, to){
   }
   requestAnimationFrame(tick);
 }
+
+/* ==========================================================================
+   7d. SIDE PANELS — khali screen par ghoomti hui jaankari
+   Log bore na hon: har 8 second me left/right panel ki jaankari badalti hai.
+   ========================================================================== */
+function initials(name){
+  const w = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (!w.length) return "?";
+  if (w.length === 1) return w[0].slice(0, 2).toUpperCase();
+  return (w[0][0] + w[w.length - 1][0]).toUpperCase();
+}
+
+/* Player photo Cricbuzz se nahi milti (image CDN block, headshot API 404) aur
+   asli photo copyrighted bhi hoti hai — isliye computer se bana avatar:
+   naam ke initial. Dikhne mein achha, koi copyright nahi. */
+function avatarHTML(name, sub, accent){
+  return '<div class="avatar"><div class="av"' +
+         (accent ? ' style="background:linear-gradient(140deg,' + accent + ',#0aa7c2)"' : '') +
+         '>' + initials(name) + '</div>' +
+         '<div><div class="avn">' + (name || "—") + '</div>' +
+         '<div class="avr">' + (sub || "") + '</div></div></div>';
+}
+
+const PANEL = { idx: 0 };
+
+function panelCards(){
+  // NOTE: S yahan global state object hai (overlay ke upar define hai)
+  const b  = S.batting     || {};
+  const bw = S.bowler      || {};
+  const sk = S.striker     || {};
+  const ns = S.nonStriker  || {};
+  const toFifty = sk.runs < 50 ? (50 - sk.runs) : (100 - sk.runs);
+  const nextMs  = sk.runs < 50 ? "FIFTY" : "CENTURY";
+  const c4 = sk.fours || 0, c6 = sk.sixes || 0;
+  const econ = (bw.balls || 0) > 0 ? ((bw.runs || 0) / ((bw.balls || 1) / 6)).toFixed(2) : "0.00";
+  // Strike rate: scraper na de to runs/balls se nikaalo. Kabhi guess nahi.
+  const srOf = (p) => (p && p.sr > 0) ? p.sr
+                    : (p && p.balls > 0) ? (p.runs / p.balls) * 100 : 0;
+  const out = [];
+
+  // 1) striker ki poori jaankari
+  out.push('<div class="ph"><em>BATTING</em> STRIKE PAR</div>' +
+    avatarHTML(sk.name, sk.runs + " (" + sk.balls + ")") +
+    '<div class="prow"><span>Runs</span><b>' + sk.runs + '</b></div>' +
+    '<div class="prow"><span>Balls</span><b>' + sk.balls + '</b></div>' +
+    '<div class="prow"><span>4s / 6s</span><b>' + c4 + ' / ' + c6 + '</b></div>' +
+    '<div class="prow"><span>Strike rate</span><b>' + srOf(sk).toFixed(1) + '</b></div>' +
+    (sk.runs < 100 ? '<div class="ps" style="margin-top:8px">' +
+      '&#127919; ' + toFifty + ' run mein ' + nextMs + '</div>' : ''));
+
+  // 2) bowler
+  out.push('<div class="ph"><em>BOWLING</em> ABHI DAAL RAHE HAIN</div>' +
+    avatarHTML(bw.name, "", "#ff9d3d") +
+    '<div class="prow"><span>Figures</span><b>' + ballsFig(bw.balls || 0) + '-' +
+      (bw.md || 0) + '-' + (bw.runs || 0) + '-' + (bw.wkts || 0) + '</b></div>' +
+    '<div class="prow"><span>Economy</span><b>' + econ + '</b></div>' +
+    '<div class="prow"><span>Maidens</span><b>' + (bw.md || 0) + '</b></div>');
+
+  // 3) partnership + doosra batsman
+  out.push('<div class="ph"><em>PARTNERSHIP</em></div>' +
+    '<div class="pt">' + (S.partnership || 0) + ' runs</div>' +
+    '<div class="ps">doosre chhor par:</div>' +
+    '<div style="margin-top:7px">' +
+    avatarHTML(ns.name, ns.runs + " (" + ns.balls + ")") + '</div>' +
+    '<div class="prow"><span>Strike rate</span><b>' + srOf(ns).toFixed(1) + '</b></div>');
+
+  // 4) run rate (chase ho to RRR, warna CRR)
+  if (S.target > 0 && S.need > 0 && S.ballsLeft > 0){
+    out.push('<div class="ph"><em>CHASE</em></div>' +
+      '<div class="pt">' + (S.need || 0) + ' runs</div>' +
+      '<div class="ps">' + (S.ballsLeft || 0) + ' balls baaki</div>' +
+      '<div class="prow"><span>Chahiye (RRR)</span><b>' + (S.rrr || 0).toFixed(2) + '</b></div>' +
+      '<div class="prow"><span>Chal raha (CRR)</span><b>' + (S.crr || 0).toFixed(2) + '</b></div>');
+  } else {
+    out.push('<div class="ph"><em>RUN RATE</em></div>' +
+      '<div class="pt">' + (S.crr || 0).toFixed(2) + '</div>' +
+      '<div class="ps">runs per over</div>' +
+      '<div class="prow"><span>Score</span><b>' + (b.score || 0) + '/' + (b.wkts || 0) + '</b></div>' +
+      '<div class="prow"><span>Overs</span><b>' + oversText(b.balls || 0) + '</b></div>');
+  }
+
+  // 5) ye over / pichhla over
+  const ov   = (S.thisOver || []).join(" ");
+  const last = (S.lastOver || []).join(" ");
+  out.push('<div class="ph"><em>OVER</em></div>' +
+    '<div class="ps" style="margin-bottom:4px">Ye over</div>' +
+    '<div class="pt" style="font-size:22px">' + (ov || "—") + '</div>' +
+    '<div class="ps" style="margin:9px 0 4px">Pichhla over</div>' +
+    '<div class="pt" style="font-size:22px;color:#8fb2cc">' + (last || "—") + '</div>');
+
+  return out;
+}
+
+function rotatePanels(){
+  const cards = panelCards();
+  if (!cards.length) return;
+  const e1 = $("lp1"), e2 = $("lp2"), e3 = $("rp1");
+  if (e1) e1.innerHTML = cards[PANEL.idx % cards.length];
+  if (e2) e2.innerHTML = cards[(PANEL.idx + 1) % cards.length];
+  if (e3) e3.innerHTML = cards[(PANEL.idx + 2) % cards.length];
+  PANEL.idx++;
+}
+
+/* Branding: kabhi channel ka naam, kabhi SUBSCRIBE / LIKE.
+   Chhota rakha gaya hai taaki screen par jagah kam le. */
+const BRANDS = ["SPORTS GYAN", "@sportsgyanin", "🔔 SUBSCRIBE",
+                "👍 LIKE KAREIN", "🔴 LIVE", "💬 COMMENT"];
+const BRAND = { idx: 0 };
+function rotateBranding(){
+  const el = $("brandName");
+  if (!el) return;
+  el.textContent = BRANDS[BRAND.idx % BRANDS.length];
+  el.style.animation = "none"; void el.offsetWidth;
+  el.style.animation = "brandIn .5s ease-out";
+  BRAND.idx++;
+}
+
 
 /* ==========================================================================
   8. AUDIO ENGINE  (browser-side: TTS playback + BGM + SFX + auto-ducking)
@@ -1900,6 +2043,12 @@ function startDemo(){
 function stopDemo(){ clearTimeout(demoTimer); demoTimer = null; }
 
 /* --- boot --- */
+/* screen kabhi khali na rahe: panels + branding ghoomte rahein.
+   Pehli baar turant chalao taaki shuruat me panel khali na dikhe. */
+rotatePanels();
+rotateBranding();
+setInterval(rotatePanels, 8000);
+setInterval(rotateBranding, 6500);
 renderAll();
 setCommentary(S.commentary_hi, S.commentary_en);
 if (location.protocol === "file:") {
@@ -1912,3 +2061,6 @@ setTimeout(() => $("help").classList.add("hide"), 8000);
 </script>
 </body>
 </html>
+
+setInterval(rotatePanels, 8000);
+setInterval(rotateBranding, 6500);

@@ -79,3 +79,16 @@ server:
 playout:
   delay_seconds: 10.0      # kitni der baad dikhe (8-12 achha hai)
   min_gap_seconds: 2.2     # do bade events ke beech kam se kam itna faasla
+
+
+# ---------------------------------------------------------------------------
+# Telegram bot — phone se control + khud-ba-khud khabar.
+# SECURITY NOTE: ye token sirf is bot ko control karta hai, aur code sirf
+# owner_chat_id ke command accept karta hai. Phir bhi chaho to @BotFather se
+# /revoke karke naya token le sakte ho.
+# ---------------------------------------------------------------------------
+telegram:
+  enabled: true
+  bot_token: "8910289799:AAF3bpcqUCwvNiGFplvaSXEHvQaO-1e7PKw"
+  owner_chat_id: "8820031174"
+  webhook_base: "https://cricket-2d-live.onrender.com"

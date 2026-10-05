@@ -39,6 +39,7 @@ from aiohttp import WSMsgType, web
 from audio_engine import AudioEngine
 from classifier import classify, clean_text
 from commentary import CommentaryEngine, prosody_for, milestone_line, hi_name
+from telegram_bot import TelegramBot
 from classifier import WICKET_HI as WICKET_HI_TEXT
 from scraper import (
     CRICBUZZ,
@@ -82,6 +83,8 @@ ENV_OVERRIDES = {
     "GEMINI_API_KEY": ("commentary", "api_key_env", str),
     "PLAYOUT_DELAY": ("playout", "delay_seconds", float),
     "PLAYOUT_GAP":   ("playout", "min_gap_seconds", float),
+    "TELEGRAM_TOKEN":    ("telegram", "bot_token", str),
+    "TELEGRAM_CHAT_ID":  ("telegram", "owner_chat_id", str),
 }
 
 
@@ -93,6 +96,7 @@ def load_config(path: str) -> dict:
         "overlay": {"viewer_base": 12000},
         "server": {"port": 8080, "host": "0.0.0.0"},
         "playout": {"delay_seconds": 10.0, "min_gap_seconds": 2.2},
+        "telegram": {"enabled": True, "bot_token": "", "owner_chat_id": ""},
     }
     try:
         import yaml  # type: ignore
@@ -454,6 +458,12 @@ button.ghost{background:#16324e;color:#cfe4f5}
   background:#16324e;color:#8fb2cc}
 .pill.on{background:#1de9b6;color:#04241c}
 </style></head><body>
+<div style="background:#0d2038;border:1.5px solid rgba(29,233,182,.3);border-radius:10px;
+     padding:10px 14px;margin-bottom:12px;font-size:13px">
+  📱 <b style="color:#1de9b6">Phone se live karna hai?</b>
+  <a href="/m" style="color:#1de9b6;font-weight:900">/m — Mobile Control</a>
+  kholein (bade buttons, match chuno, overlay kholen).
+</div>
 <h1>🏏 Cricket 2D — Control</h1>
 <div class="sub">Match choose karein · <span id=st>loading…</span></div>
 
@@ -567,6 +577,32 @@ class App:
             min_gap=float(cfg.get("playout", {}).get("min_gap_seconds", 2.2)))
         # NOTE: .start() run() mein hota hai — yahan abhi event loop chalu nahi
         # hota, isliye asyncio.create_task() fail ho jata.
+
+        # ---- Telegram bot (phone se control + khud-ba-khud khabar) ----
+        tg = cfg.get("telegram", {}) or {}
+        try:
+            self.bot = TelegramBot(
+                token=os.environ.get("TELEGRAM_TOKEN") or tg.get("bot_token", ""),
+                chat_id=str(os.environ.get("TELEGRAM_CHAT_ID") or tg.get("owner_chat_id", "") or ""),
+                webhook_base=(os.environ.get("RENDER_EXTERNAL_URL")
+                              or tg.get("webhook_base", "")
+                              or "https://cricket-2d-live.onrender.com"),
+            )
+        except Exception as exc:                      # bot kabhi server ko na giraye
+            LOG.warning("Telegram bot init failed: %s", exc)
+            class _NullBot:
+                enabled = False
+                async def send(self, *a, **k): return False
+                async def set_webhook(self, *a, **k): return False
+                async def handle(self, *a, **k): return None
+                async def notify_error(self, *a, **k): return False
+                async def notify_recovered(self, *a, **k): return False
+                async def notify_match(self, *a, **k): return False
+                async def notify_milestone(self, *a, **k): return False
+                async def notify_scraper_down(self, *a, **k): return False
+                def close(self): pass
+            self.bot = _NullBot()
+        self.bot.app = self          # bot ko server ka reference (status/commands)
 
     # -- websocket helpers --------------------------------------------------
     def emit(self, msg: dict, gap: bool = False, at: float = None, group=None):
@@ -740,6 +776,16 @@ class App:
 
     # -- scraper callback ---------------------------------------------------
     async def on_snapshot(self, snap: dict, ev):
+        # SELF-HEALING: yahan koi bhi error aaye to server marne ke bajaye
+        # bas ye ball chhod do, khabar bhej do aur agle ball par chale jao.
+        try:
+            await self._on_snapshot(snap, ev)
+        except Exception as exc:
+            LOG.exception("on_snapshot: %s", exc)
+            self.state.status["errors"] += 1
+            asyncio.create_task(self.bot.notify_error("ball processing", exc))
+
+    async def _on_snapshot(self, snap: dict, ev):
         st = self.state
         st.snap = snap
         st.last_success = time.time()
@@ -767,6 +813,10 @@ class App:
         for ms in detect_milestones(snap, st):
             self.emit({"type": "milestone", "payload": ms}, gap=True)
             LOG.info("[milestone] %s %s", ms["kind"], ms["label"])
+            who = (snap.get("striker", {}).get("name") if ms["kind"] == "bat"
+                   else snap.get("bowler", {}).get("name"))
+            asyncio.create_task(self.bot.notify_milestone(
+                ms["kind"], ms["label"], who or ""))
             if self.audio.enabled:
                 line = milestone_line(
                     "FIFTY" if ms["value"] == 50 else "HUNDRED" if ms["value"] == 100 else "FIVE_FOR",
@@ -898,6 +948,7 @@ class App:
 
             if now - st.last_success > 180:
                 LOG.warning("scraper stale for %.0fs -> rehearsal", now - st.last_success)
+                asyncio.create_task(self.bot.notify_scraper_down())
                 self.want_rehearsal = True
                 return
 
@@ -952,6 +1003,10 @@ class App:
 
                 st.status["mode"] = "live"
                 LOG.info("Streaming match %s — %s", self.scraper.match_id, snap.get("title"))
+                if self._last_notified_match != self.scraper.match_id:
+                    self._last_notified_match = self.scraper.match_id
+                    asyncio.create_task(self.bot.notify_match(
+                        snap.get("title") or "?", str(self.scraper.match_id), True))
                 await self.broadcast({"type": "status", "payload": st.status})
 
                 from scraper import poll_loop
@@ -1024,6 +1079,37 @@ class App:
     async def h_index(self, request):
         return web.FileResponse(os.path.join(OVERLAY_DIR, "index.html"))
 
+    async def _bot_startup(self):
+        """Server chalu hone par webhook lagao aur phone par khabar bhejo."""
+        try:
+            await asyncio.sleep(3)
+            await self.bot.set_webhook()
+            await self.bot.send(
+                "🟢 SERVER CHALU HO GAYA\n\n"
+                f"• Mode    : {self.state.status.get('mode')}\n"
+                f"• Match   : {self.state.status.get('title') or 'dhoondh rahe hain…'}\n"
+                f"• TTS     : {'haan' if self.state.status.get('tts') else 'nahi'}\n"
+                f"• Delay   : {self.playout.delay:.0f}s\n\n"
+                "/matches se match badlo · /status se health dekho",
+                force=True)
+        except Exception as exc:
+            LOG.debug("bot startup: %s", exc)
+
+    async def h_telegram(self, request):
+        """Telegram webhook. Kabhi error nahi phenkna — warna Telegram baar baar
+        retry karega aur server busy ho jayega."""
+        try:
+            if request.method == "POST":
+                try:
+                    payload = await request.json()
+                except Exception:
+                    payload = {}
+                asyncio.create_task(self.bot.handle(payload or {}))
+            return json_resp({"ok": True})
+        except Exception as exc:
+            LOG.warning("telegram webhook: %s", exc)
+            return json_resp({"ok": True})
+
     async def h_preview(self, request):
         """Layout guide — kahan kya dikhega, kis waqt kya hoga."""
         for name in ("PREVIEW.html", os.path.join(OVERLAY_DIR, "PREVIEW.html")):
@@ -1035,6 +1121,19 @@ class App:
         return web.Response(
             text="<h1>PREVIEW.html nahi mila</h1><p>Repo root me hona chahiye.</p>",
             content_type="text/html", status=404)
+
+    async def h_mobile(self, request):
+        """Phone-friendly control page — kahin se bhi live shuru karne ke liye."""
+        for cand in (os.path.join(ROOT, "mobile.html"),
+                     os.path.join(OVERLAY_DIR, "mobile.html")):
+            try:
+                with open(cand, encoding="utf-8") as fh:
+                    return web.Response(text=fh.read(), content_type="text/html")
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+        return web.Response(text="<h1>mobile.html nahi mila</h1>", content_type="text/html", status=404)
 
     async def h_admin(self, request):
         """Tiny mobile-friendly control page: pick a match, see backend status."""
@@ -1121,7 +1220,12 @@ class App:
         app.router.add_get("/ws", self.h_ws)
         app.router.add_get("/admin", self.h_admin)
         app.router.add_get("/preview", self.h_preview)
+        app.router.add_get("/telegram", self.h_telegram)
+        app.router.add_post("/telegram", self.h_telegram)
         app.router.add_get("/PREVIEW.html", self.h_preview)
+        app.router.add_get("/m", self.h_mobile)
+        app.router.add_get("/mobile", self.h_mobile)
+        app.router.add_get("/mobile.html", self.h_mobile)
         app.router.add_get("/api/state", self.h_state)
         app.router.add_get("/api/health", self.h_health)
         app.router.add_get("/api/matches", self.h_matches)
@@ -1144,6 +1248,10 @@ class App:
 
         # playout buffer chalu karo (ab event loop chal raha hai)
         self.playout.start()
+
+        # Telegram: webhook set karo aur malik ko khabar do
+        if self.bot.enabled:
+            asyncio.create_task(self._bot_startup())
 
         runner = web.AppRunner(app)
         await runner.setup()

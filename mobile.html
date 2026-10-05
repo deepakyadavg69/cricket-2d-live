@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#061120">
+<title>SPORTS GYAN · Mobile Control</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#061120; --card:#0d2038; --card2:#112842;
+  --acc:#1de9b6; --acc2:#0aa7c2;
+  --txt:#eaf6ff; --dim:#8fb2cc; --red:#ff4d5e; --amber:#ffb020;
+  --ok:#2fd67a;
+}
+body{background:var(--bg);color:var(--txt);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans Devanagari",sans-serif;
+  padding:14px 14px calc(28px + env(safe-area-inset-bottom));
+  min-height:100vh;-webkit-text-size-adjust:100%}
+
+h1{font-size:17px;font-weight:900;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:0 0 auto}
+h1 .dot.live{background:var(--red);animation:blink 1.4s infinite}
+h1 .dot.ok{background:var(--ok)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.sub{font-size:12px;color:var(--dim);margin:3px 0 15px;font-weight:600}
+
+.card{background:linear-gradient(150deg,var(--card),var(--card2));
+  border:1.5px solid rgba(29,233,182,.22);border-radius:14px;
+  padding:14px;margin-bottom:13px}
+.card h2{font-size:11px;letter-spacing:1.6px;color:var(--acc);
+  font-weight:900;margin-bottom:11px}
+
+/* score */
+.score{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.score .big{font-size:34px;font-weight:900;letter-spacing:-.5px;
+  font-variant-numeric:tabular-nums}
+.score .ov{font-size:16px;color:var(--dim);font-weight:700}
+.teams{font-size:13px;color:var(--dim);font-weight:700;margin-top:5px}
+
+/* status pills */
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:11px}
+.pill{font-size:11px;font-weight:800;padding:4px 9px;border-radius:20px;
+  background:rgba(255,255,255,.09);color:var(--dim)}
+.pill.ok{background:rgba(47,214,122,.16);color:var(--ok)}
+.pill.bad{background:rgba(255,77,94,.16);color:var(--red)}
+.pill.warn{background:rgba(255,176,32,.16);color:var(--amber)}
+
+/* BUTTONS — phone ke liye bade */
+button{font-family:inherit;font-weight:900;border:none;cursor:pointer;
+  border-radius:12px;width:100%;color:#04241c;
+  background:linear-gradient(135deg,var(--acc),var(--acc2));
+  font-size:17px;padding:17px 14px;margin-bottom:10px;
+  box-shadow:0 6px 18px rgba(29,233,182,.22)}
+button:active{transform:scale(.975)}
+button.ghost{background:rgba(255,255,255,.09);color:var(--txt);
+  box-shadow:none;font-size:15px;padding:14px;
+  border:1.5px solid rgba(255,255,255,.16)}
+button.danger{background:linear-gradient(135deg,#ff5d6c,#c9184a);color:#fff}
+button:disabled{opacity:.45}
+
+/* match list */
+.mitem{display:block;width:100%;text-align:left;margin-bottom:9px;
+  background:rgba(255,255,255,.06);color:var(--txt);
+  border:1.5px solid rgba(255,255,255,.12);border-radius:11px;
+  padding:13px 14px;box-shadow:none;font-size:15px;font-weight:800}
+.mitem:active{transform:scale(.98);background:rgba(29,233,182,.15)}
+.mitem.active{border-color:var(--acc);background:rgba(29,233,182,.13)}
+.mitem .mname{font-size:15px;line-height:1.3}
+.mitem .mmeta{font-size:11.5px;color:var(--dim);font-weight:700;margin-top:4px}
+.mitem .livedot{display:inline-block;width:7px;height:7px;border-radius:50%;
+  background:var(--red);margin-right:6px;vertical-align:middle}
+
+input,select{width:100%;font-family:inherit;font-size:16px;padding:14px;
+  border-radius:11px;border:1.5px solid rgba(255,255,255,.18);
+  background:rgba(0,0,0,.32);color:var(--txt);margin-bottom:10px}
+input::placeholder{color:#5f7f99}
+label{font-size:12px;color:var(--dim);font-weight:700;display:block;margin-bottom:6px}
+
+.note{font-size:12.5px;color:var(--dim);line-height:1.6;font-weight:600}
+.note b{color:var(--acc)}
+.step{display:flex;gap:9px;margin-bottom:9px;font-size:13px;line-height:1.5}
+.step .n{flex:0 0 22px;height:22px;border-radius:50%;background:var(--acc);
+  color:#04241c;font-weight:900;font-size:12px;
+  display:flex;align-items:center;justify-content:center;margin-top:1px}
+.hr{height:1px;background:rgba(255,255,255,.1);margin:13px 0}
+.err{background:rgba(255,77,94,.13);border:1.5px solid rgba(255,77,94,.4);
+  border-radius:11px;padding:11px;font-size:13px;font-weight:700;
+  color:#ffb3ba;margin-bottom:11px;display:none}
+.toast{position:fixed;left:14px;right:14px;bottom:18px;
+  background:var(--acc);color:#04241c;font-weight:900;font-size:14px;
+  padding:14px;border-radius:12px;text-align:center;
+  box-shadow:0 10px 30px rgba(0,0,0,.5);
+  transform:translateY(140%);transition:transform .28s;z-index:99}
+.toast.show{transform:translateY(0)}
+.offline{font-size:12px;color:var(--amber);font-weight:700;margin-top:8px}
+</style>
+</head>
+<body>
+
+<h1><span class="dot" id="dot"></span> SPORTS GYAN <span style="color:var(--dim);font-weight:700;font-size:13px">Mobile Control</span></h1>
+<div class="sub" id="sub">server se jaa raha hai…</div>
+
+<div class="err" id="err"></div>
+
+<!-- ===== STATUS ===== -->
+<div class="card">
+  <h2>ABHI KYA CHAL RAHA HAI</h2>
+  <div class="score">
+    <span class="big" id="sc">—</span>
+    <span class="ov" id="ov"></span>
+  </div>
+  <div class="teams" id="tm">—</div>
+  <div class="pills" id="pills"></div>
+  <div class="offline" id="offlineMsg" style="display:none"></div>
+</div>
+
+<!-- ===== GO LIVE ===== -->
+<div class="card">
+  <h2>LIVE KARO</h2>
+  <button id="btnGo">▶ OVERLAY KHOLEN (LIVE)</button>
+  <button class="ghost" id="btnFull">📱 FULL SCREEN OVERLAY</button>
+  <div class="note" style="margin-top:6px">
+    Overlay khulne ke baad <b>ek baar screen par tap karein</b> —
+    awaaz (commentary/BGM) tabhi shuru hoti hai. Phone ko
+    <b>landscape</b> (side) me ghuma lena.
+  </div>
+</div>
+
+<!-- ===== MATCH SELECT ===== -->
+<div class="card">
+  <h2>MATCH CHUNO</h2>
+  <div id="mlist"><div class="note">load ho raha hai…</div></div>
+  <div class="hr"></div>
+  <label>Match ID khud daalo</label>
+  <input id="mid" type="text" inputmode="numeric" placeholder="jaise 107894">
+  <button class="ghost" id="btnSet">SET KARO</button>
+  <button class="ghost" id="btnRefresh">🔄 LIST REFRESH</button>
+</div>
+
+<!-- ===== PRISM STEPS ===== -->
+<div class="card">
+  <h2>PHONE SE YOUTUBE LIVE — 6 STEP</h2>
+  <div class="step"><span class="n">1</span><span>Prism Live Studio kholen → <b>ScreenCast</b> (Live &gt; ScreenCast), <b>Web source nahi</b>.</span></div>
+  <div class="step"><span class="n">2</span><span>Chrome kholen → <b>Desktop site</b> ON karein → <b>cricket-2d-live.onrender.com/m</b></span></div>
+  <div class="step"><span class="n">3</span><span>Yahan se match chuno, phir <b>OVERLAY KHOLEN</b> dabayein.</span></div>
+  <div class="step"><span class="n">4</span><span>Overlay par <b>ek tap</b> karein (awaaz chalu).</span></div>
+  <div class="step"><span class="n">5</span><span>Prism me wapas aayein → resolution <b>1080p</b>, bitrate <b>8000–12000</b> kbps.</span></div>
+  <div class="step"><span class="n">6</span><span><b>Go Live</b>. Phone ko landscape me hi rehne dein, screen band na ho.</span></div>
+  <div class="note" style="margin-top:9px">
+    ⚠️ Prism ScreenCast <b>internal sound</b> pakadta hai — isliye headphone
+    lagane ki zaroorat nahi. Agar awaaz na aaye to overlay par dobara tap karein.
+  </div>
+</div>
+
+<!-- ===== HEALTH ===== -->
+<div class="card">
+  <h2>SERVER HEALTH</h2>
+  <div class="pills" id="hpills"></div>
+  <div class="note" id="hnote" style="margin-top:9px"></div>
+  <button class="ghost" id="btnPing">🔁 ABHI CHECK KARO</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (i) => document.getElementById(i);
+let API_OK = true;
+
+function toast(m){
+  const t = $("toast"); t.textContent = m; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 2400);
+}
+function err(m){
+  const e = $("err"); e.textContent = m; e.style.display = m ? "block" : "none";
+}
+
+async function api(path, opts){
+  const r = await fetch(path, Object.assign({cache:"no-store"}, opts||{}));
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+/* ---------- status ---------- */
+async function loadState(){
+  try{
+    const d = await api("/api/state");
+    API_OK = true;
+    const s = (d && (d.state || d)) || {};
+    const ov = s.overlay || s;
+    const bt = ov.batting || {};
+    $("sc").textContent = (bt.score != null ? bt.score + "/" + bt.wkts : "—");
+    $("ov").textContent = bt.overs != null ? "(" + bt.overs + ")" : "";
+
+    const m = ov.match || {};
+    $("tm").textContent = (m.title || "—") + (m.innings ? " · " + m.innings : "");
+
+    const st = s.status || {};
+    const live = /live/i.test(st.mode || "");
+    $("dot").className = "dot " + (live ? "live" : "ok");
+    $("sub").textContent = live ? "LIVE chal raha hai" : "demo mode";
+
+    const p = [];
+    p.push('<span class="pill ' + (live?"ok":"warn") + '">' + (st.mode||"?") + '</span>');
+    p.push('<span class="pill ' + (st.scraper==="ok"?"ok":"bad") + '">scraper ' + (st.scraper||"?") + '</span>');
+    p.push('<span class="pill ' + ((st.errors|0)?"bad":"ok") + '">errors ' + (st.errors|0) + '</span>');
+    if (st.match_id) p.push('<span class="pill">id ' + st.match_id + '</span>');
+    $("pills").innerHTML = p.join("");
+    err("");
+  }catch(e){
+    API_OK = false;
+    $("dot").className = "dot";
+    $("sub").textContent = "server se connect nahi ho paaya";
+    err("Server se baat nahi ho paayi (" + e.message + ").\nYe page sirf live site par kaam karta hai.");
+  }
+}
+
+/* ---------- match list ---------- */
+async function loadMatches(){
+  const box = $("mlist");
+  box.innerHTML = '<div class="note">load ho raha hai…</div>';
+  try{
+    const d = await api("/api/matches");
+    const ms = d.matches || [];
+    if (!ms.length){ box.innerHTML = '<div class="note">Koi match nahi mila. Refresh dabayein.</div>'; return; }
+    let cur = "";
+    try{ const s = await api("/api/state"); cur = String((s.status||{}).match_id || ""); }catch(e){}
+    box.innerHTML = ms.map(m => {
+      const live = /live|preview|rain|innings break/i.test(m.state || m.status || "");
+      const nm = ((m.team1||"?") + " vs " + (m.team2||"?"));
+      const meta = [m.series, m.desc, m.format].filter(Boolean).join(" · ");
+      return '<button class="mitem' + (cur && cur === String(m.match_id) ? " active" : "") +
+             '" data-id="' + m.match_id + '">' +
+             '<div class="mname">' + (live ? '<span class="livedot"></span>' : '') + nm + '</div>' +
+             '<div class="mmeta">' + meta + ' · ID ' + m.match_id + '</div></button>';
+    }).join("");
+    box.querySelectorAll(".mitem").forEach(b => {
+      b.onclick = () => setMatch(b.dataset.id, b.querySelector(".mname").textContent.trim());
+    });
+  }catch(e){
+    box.innerHTML = '<div class="note" style="color:#ffb3ba">List nahi aa payi: ' + e.message + '</div>';
+  }
+}
+
+async function setMatch(id, label){
+  try{
+    await api("/api/match", {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({match_id: String(id)})
+    });
+    toast("Match set ho gaya ✓");
+    loadMatches(); loadState();
+  }catch(e){ toast("Error: " + e.message); }
+}
+
+/* ---------- health ---------- */
+async function loadHealth(){
+  try{
+    const h = await api("/api/health");
+    const p = [];
+    const flag = (k, v, ok) => p.push('<span class="pill ' + (ok?"ok":"bad") + '">' + k + ' ' + v + '</span>');
+    flag("mode", h.mode, true);
+    flag("scraper", h.scraper, h.scraper === "ok");
+    flag("errors", h.errors, (h.errors|0) === 0);
+    flag("tts", h.tts ? "on" : "off", !!h.tts);
+    if (h.assets){
+      flag("bgm", (h.assets.bgm||[]).length, (h.assets.bgm||[]).length > 0);
+      flag("sfx", (h.assets.sfx||[]).length, (h.assets.sfx||[]).length > 0);
+    }
+    $("hpills").innerHTML = p.join("");
+    $("hnote").textContent = "Sab theek hai. Overlay khol kar live shuru karein.";
+  }catch(e){
+    $("hpills").innerHTML = '<span class="pill bad">offline</span>';
+    $("hnote").textContent = "Health nahi mila: " + e.message;
+  }
+}
+
+/* ---------- buttons ---------- */
+$("btnGo").onclick = () => { location.href = "/?auto=1"; };
+$("btnFull").onclick = () => {
+  const u = location.origin + "/?auto=1";
+  try{ location.href = u; }catch(e){}
+  toast("Overlay khula. Ek tap karein awaaz ke liye.");
+};
+$("btnSet").onclick = () => {
+  const v = $("mid").value.trim();
+  if (!/^\d+$/.test(v)){ toast("Sirf number daalein"); return; }
+  setMatch(v, v);
+};
+$("btnRefresh").onclick = () => { loadMatches(); toast("Refresh…"); };
+$("btnPing").onclick = () => { loadHealth(); loadState(); toast("Check ho raha hai…"); };
+
+/* ---------- boot + auto refresh ---------- */
+loadState(); loadMatches(); loadHealth();
+setInterval(() => { loadState(); }, 15000);
+setInterval(() => { loadHealth(); }, 60000);
+</script>
+</body>
+</html>
