@@ -1510,13 +1510,14 @@ async function bootstrap(){
 function LOG_OK(m){ if (window.console) console.log("[overlay]" + m); }
 
 let reconnectDelay = 2000;
+let connectFails = 0;
 function connectWS(){
   if (location.protocol === "file:"){ startDemo(); return; }
   try { ws = new WebSocket(wsUrl()); } catch(e){ scheduleReconnect(); return; }
 
   ws.onopen = () => {
     live = true; stopDemo(); hasServer = true;
-    reconnectDelay = 2000;
+    reconnectDelay = 2000; connectFails = 0;
     $("offline").classList.remove("show");
     $("statusTxt").textContent = "LIVE";
     $("status").classList.add("liveC");
@@ -1534,6 +1535,7 @@ function connectWS(){
     $("status").classList.remove("liveC");
     $("pMode").textContent = "RECONNECTING";
     $("offline").classList.add("show");
+    connectFails++;
     scheduleReconnect();
   };
 }
@@ -1542,6 +1544,10 @@ function scheduleReconnect(){
   // exponential backoff with jitter, capped at 30s — so a flaky network
   // doesn't hammer the server (and Render doesn't stay asleep)
   reconnectDelay = Math.min(30000, reconnectDelay * 1.6 + Math.random()*800);
+  // Server kabhi mila hi nahi (galat URL, Render so raha hai, preview iframe)?
+  // Tab bhi screen khaali nahi rehni chahiye — apna demo feed chala do, aur
+  // connection ki koshish peethhe-peethhe chalti rahe.
+  if (!hasServer && connectFails >= 2) startDemo();
   setTimeout(connectWS, reconnectDelay);
 }
 
