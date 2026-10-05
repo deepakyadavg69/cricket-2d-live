@@ -480,6 +480,7 @@ class App:
         self.stop_evt = asyncio.Event()
         self.want_rehearsal = False
         self.want_switch = False
+        self.want_live = False
 
     # -- websocket helpers --------------------------------------------------
     async def broadcast(self, msg: dict):
@@ -673,7 +674,24 @@ class App:
         det = BallDetector()
         seq = [0, 1, 4, 0, 6, 2, 1, 0, "W", 4, 1, 6, 0, 2, 1, 3, 0, 0, 6, 1]
 
+        last_probe = time.time()
         while not self.stop_evt.is_set():
+            # Rehearsal is a safety net, not a destination. Every 5 minutes look
+            # for a real live match again — otherwise a server started during a
+            # quiet period would rehearse forever and never show the real game.
+            if time.time() - last_probe > 300:
+                last_probe = time.time()
+                try:
+                    self.scraper.match_id = None
+                    if await self.scraper.resolve_match():
+                        probe = await self.scraper.snapshot()
+                        if probe and probe.get("is_live"):
+                            LOG.info("Live match mil gaya -> rehearsal se live par ja rahe hain")
+                            self.want_live = True
+                            return
+                except Exception as exc:
+                    LOG.debug("live probe failed: %s", exc)
+
             v = seq[(st.status["balls_seen"]) % len(seq)]
             wicket = v == "W"
             runs = 0 if wicket else int(v)
@@ -771,6 +789,14 @@ class App:
         st = self.state
         await self.scraper.start()
 
+        async def rehearse():
+            """Rehearsal chalate hain; True = live match mil gaya, dobara try karo."""
+            await self.rehearsal_loop()
+            if self.want_live:
+                self.want_live = False
+                return True
+            return False
+
         for _attempt in range(12):
             self.want_rehearsal = False
             self.want_switch = False
@@ -779,19 +805,22 @@ class App:
                 if not ok:
                     st.status["scraper"] = "no_match"
                     await self.broadcast({"type": "status", "payload": st.status})
-                    await self.rehearsal_loop()
+                    if await rehearse():
+                        continue
                     return
 
                 snap = await self.scraper.snapshot()
                 if not snap:
-                    await self.rehearsal_loop()
+                    if await rehearse():
+                        continue
                     return
 
                 # --rehearse = force the synthetic feed (practice bina live match ke)
                 if self.args.rehearse or not snap.get("is_live"):
                     if not snap.get("is_live"):
                         LOG.info("Auto-picked match is not live -> rehearsal feed")
-                    await self.rehearsal_loop()
+                    if await rehearse():
+                        continue
                     return
 
                 st.status["mode"] = "live"
@@ -814,7 +843,8 @@ class App:
 
                 if self.want_rehearsal:
                     LOG.warning("Falling back to rehearsal feed")
-                    await self.rehearsal_loop()
+                    if await rehearse():
+                        continue
                     return
                 if self.want_switch:
                     LOG.info("Match khatam — agla live match dhoondh rahe hain…")
