@@ -25,20 +25,97 @@ LOG = logging.getLogger("commentary")
 # ---------------------------------------------------------------------------
 #  Hindi building blocks
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+#  Player names in Devanagari.
+#
+#  NOTE ON TRANSLITERATION: an algorithmic English->Devanagari romaniser was
+#  tested and rejected - it produced "Kohli -> कोह्ली" and "Cummins -> उम्मिन्स"
+#  (it ate the leading C). Wrong names sound far worse on air than Latin ones,
+#  so we hand-curate the players that actually matter and leave everyone else
+#  in Latin. edge-tts reads Latin names with a Hindi accent, which is exactly
+#  how real Hindi commentary sounds for overseas players.
+# ---------------------------------------------------------------------------
 NAMES_HI = {
-    "virat kohli": "विराट कोहली",
-    "rohit sharma": "रोहित शर्मा",
-    "ms dhoni": "एमएस धोनी",
-    "kl rahul": "केएल राहुल",
-    "jasprit bumrah": "जसप्रीत बुमराह",
-    "hardik pandya": "हार्दिक पंड्या",
-    "suryakumar yadav": "सूर्यकुमार यादव",
-    "ravindra jadeja": "रविंद्र जडेजा",
-    "shubman gill": "शुभमन गिल",
-    "rishabh pant": "ऋषभ पंत",
-    "mohammed shami": "मोहम्मद शमी",
-    "kuldeep yadav": "कुलदीप यादव",
+    # --- India ---
+    "virat kohli": "विराट कोहली", "rohit sharma": "रोहित शर्मा",
+    "ms dhoni": "महेंद्र सिंह धोनी", "kl rahul": "केएल राहुल",
+    "jasprit bumrah": "जसप्रीत बुमराह", "hardik pandya": "हार्दिक पंड्या",
+    "suryakumar yadav": "सूर्यकुमार यादव", "ravindra jadeja": "रवींद्र जडेजा",
+    "shubman gill": "शुभमन गिल", "rishabh pant": "ऋषभ पंत",
+    "mohammed shami": "मोहम्मद शमी", "kuldeep yadav": "कुलदीप यादव",
+    "ravichandran ashwin": "रविचंद्रन अश्विन", "shreyas iyer": "श्रेयस अय्यर",
+    "ishan kishan": "ईशान किशन", "yuzvendra chahal": "युजवेंद्र चहल",
+    "bhuvneshwar kumar": "भुवनेश्वर कुमार", "mohammed siraj": "मोहम्मद सिराज",
+    "arshdeep singh": "अर्शदीप सिंह", "axar patel": "अक्षर पटेल",
+    "washington sundar": "वॉशिंगटन सुंदर", "tilak varma": "तिलक वर्मा",
+    "ruturaj gaikwad": "रुतुराज गायकवाड", "sanju samson": "संजू सैमसन",
+    "shivam dube": "शिवम दुबे", "riyan parag": "रियान पराग",
+    "rinku singh": "रिंकू सिंह", "abhishek sharma": "अभिषेक शर्मा",
+    "nitish kumar reddy": "नितीश कुमार रेड्डी", "harshit rana": "हर्षित राणा",
+    "yashasvi jaiswal": "यशस्वी जयसवाल", "sarfaraz khan": "सरफराज खान",
+    "dhruv jurel": "ध्रुव जुरेल", "shardul thakur": "शार्दुल ठाकुर",
+    # --- overseas ---
+    "steve smith": "स्टीव स्मिथ", "david warner": "डेविड वॉर्नर",
+    "mitchell starc": "मिशेल स्टार्क", "pat cummins": "पैट कमिंस",
+    "josh hazlewood": "जॉश हेज़लवुड", "glenn maxwell": "ग्लेन मैक्सवेल",
+    "travis head": "ट्रैविस हेड", "marnus labuschagne": "मार्नस लाबुशेन",
+    "joe root": "जो रूट", "ben stokes": "बेन स्टोक्स",
+    "jos buttler": "जोस बटलर", "jofra archer": "जोफ्रा आर्चर",
+    "kane williamson": "केन विलियमसन", "trent boult": "ट्रेंट बोल्ट",
+    "rachin ravindra": "रचिन रवींद्र", "kagiso rabada": "कगिसो रबाडा",
+    "quinton de kock": "क्विंटन डी कॉक", "heinrich klaasen": "हेनरिक क्लासेन",
+    "shaheen afridi": "शाहीन अफरीदी", "babar azam": "बाबर आज़म",
+    "shakib al hasan": "शाकिब अल हसन", "rashid khan": "राशिद खान",
+    "andre russell": "आंद्रे रसेल", "sunil narine": "सुनील नरेन",
+    "faf du plessis": "फाफ डु प्लेसिस", "ab de villiers": "एबी डिविलियर्स",
+    "chris gayle": "क्रिस गेल", "kieron pollard": "किरोन पोलार्ड",
+    "dwayne bravo": "ड्वेन ब्रावो", "sikandar raza": "सिकंदर रज़ा",
 }
+
+# surname-only fallback (so "V KOHLI" / "VIRAT KOHLI" dono chal jaayein)
+SURNAME_HI = {
+    "kohli": "कोहली", "sharma": "शर्मा", "dhoni": "धोनी", "rahul": "राहुल",
+    "bumrah": "बुमराह", "pandya": "पंड्या", "yadav": "यादव", "jadeja": "जडेजा",
+    "gill": "गिल", "pant": "पंत", "shami": "शमी", "kuldeep": "कुलदीप",
+    "ashwin": "अश्विन", "iyer": "अय्यर", "kishan": "किशन", "chahal": "चहल",
+    "kumar": "कुमार", "siraj": "सिराज", "singh": "सिंह", "patel": "पटेल",
+    "sundar": "सुंदर", "varma": "वर्मा", "gaikwad": "गायकवाड", "samson": "सैमसन",
+    "dube": "दुबे", "parag": "पराग", "rinku": "रिंकू", "abhishek": "अभिषेक",
+    "reddy": "रेड्डी", "rana": "राणा", "jaiswal": "जयसवाल", "khan": "खान",
+    "jurel": "जुरेल", "thakur": "ठाकुर", "smith": "स्मिथ", "warner": "वॉर्नर",
+    "starc": "स्टार्क", "cummins": "कमिंस", "hazlewood": "हेज़लवुड",
+    "maxwell": "मैक्सवेल", "head": "हेड", "labuschagne": "लाबुशेन",
+    "root": "रूट", "stokes": "स्टोक्स", "buttler": "बटलर", "archer": "आर्चर",
+    "williamson": "विलियमसन", "boult": "बोल्ट", "ravindra": "रवींद्र",
+    "rabada": "रबाडा", "kock": "डी कॉक", "klaasen": "क्लासेन",
+    "afridi": "अफरीदी", "azam": "आज़म", "hasan": "अल हसन", "russell": "रसेल",
+    "narine": "नरेन", "plessis": "डु प्लेसिस", "villiers": "डिविलियर्स",
+    "gayle": "गेल", "pollard": "पोलार्ड", "bravo": "ब्रावो", "raza": "रज़ा",
+}
+
+# TTS prosody per event — makes the voice sound like a real commentator
+# instead of a flat robot reading the same sentence all match.
+PROSODY = {
+    "RUN_SIX":   {"rate": "+24%", "pitch": "+16Hz"},
+    "RUN_FOUR":  {"rate": "+18%", "pitch": "+11Hz"},
+    "WICKET":    {"rate": "+10%", "pitch": "-6Hz"},
+    "MILESTONE": {"rate": "+22%", "pitch": "+18Hz"},
+    "DOT_BALL":  {"rate": "+8%",  "pitch": "+2Hz"},
+    "RUN_SINGLE":{"rate": "+12%", "pitch": "+6Hz"},
+    "RUN_DOUBLE":{"rate": "+14%", "pitch": "+8Hz"},
+    "RUN_TRIPLE":{"rate": "+16%", "pitch": "+9Hz"},
+    "_over":     {"rate": "+6%",  "pitch": "+2Hz"},
+}
+DEFAULT_PROSODY = {"rate": "+12%", "pitch": "+6Hz"}
+
+
+def prosody_for(cls: dict, over: bool = False) -> dict:
+    if over:
+        return PROSODY["_over"]
+    if cls.get("milestone"):
+        return PROSODY["MILESTONE"]
+    return PROSODY.get(cls.get("event", ""), DEFAULT_PROSODY)
+
 
 SHOT_HI = {
     "SHOT_SIX": "ज़बरदस्त शॉट",
@@ -77,9 +154,15 @@ def _surname(name: str) -> str:
 
 
 def hi_name(name: str) -> str:
+    """Devanagari me naam; curated nahi mila to Latin surname (TTS theek padhta hai)."""
     key = (name or "").lower().strip()
+    if not key:
+        return "बल्लेबाज़"
     if key in NAMES_HI:
         return NAMES_HI[key]
+    last = key.split()[-1]
+    if last in SURNAME_HI:
+        return SURNAME_HI[last]
     return _surname(name) or "बल्लेबाज़"
 
 

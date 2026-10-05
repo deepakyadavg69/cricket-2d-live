@@ -604,8 +604,13 @@ class CricbuzzScraper:
         out = []
         for inn in g(d, "commentary", default=[]) or []:
             for c in g(inn, "commentaryList", default=[]) or []:
+                # The RSC payload sometimes leaks chunk markers ("B0$") and
+                # squad/Playing XI blocks into the commentary list. Strip the
+                # marker, then drop anything that still isn't real commentary.
                 txt = (g(c, "commText", default="") or "").strip()
-                if not txt:
+                if "B0$" in txt:
+                    txt = txt.split("B0$")[-1].strip()
+                if not txt or len(txt) < 12 or "Playing XI" in txt:
                     continue
                 out.append(
                     {
@@ -647,18 +652,25 @@ class BallDetector:
             return None
 
         p, c = self.prev, cur
-        self.prev = cur
 
         # innings break / rain / reset
         if c["innings_id"] != p["innings_id"]:
+            self.prev = cur
             return {"type": "innings_break", "innings": c["innings_id"]}
 
         d_score = c["score"] - p["score"]
         d_wkts = c["wickets"] - p["wickets"]
         d_balls = c["balls"] - p["balls"]
 
-        if d_balls < 0 or d_score < 0 or d_wkts < 0:   # data corrected / new innings
-            return {"type": "reset"}
+        if d_balls < 0 or d_score < 0 or d_wkts < 0:
+            # Cricbuzz's CDN occasionally hands us an OLDER cached page, so the
+            # score appears to go backwards. Never let that fire a fake ball or
+            # rewind the overlay: keep our high-water mark and wait for a fresh
+            # page. (Returning "stale" instead of updating self.prev is the fix
+            # — updating here would make the next good page look like a big jump.)
+            return {"type": "stale"}
+
+        self.prev = cur
 
         if d_balls == 0 and d_score == 0 and d_wkts == 0:
             return None                                 # nothing happened yet
@@ -668,7 +680,13 @@ class BallDetector:
         # and an extra is capped at 5 (wide + 4 byes). Anything larger means we
         # skipped deliveries — silently resync the scoreboard instead of
         # announcing "12 runs" on air.
-        if (d_balls == 1 and d_score > 7) or (d_balls == 0 and d_score > 5) or d_wkts > 1:
+        # d_balls > 1 means we fell behind (slow poll, CDN lag, Render cold
+        # start) and can no longer say which ball produced which runs — so
+        # resync silently rather than announcing "8 runs" on air.
+        if (d_balls > 1
+                or (d_balls == 1 and d_score > 7)
+                or (d_balls == 0 and d_score > 5)
+                or d_wkts > 1):
             return {"type": "catchup", "runs": d_score, "wickets": d_wkts}
 
         # Find the freshest commentary line we haven't used yet

@@ -260,6 +260,21 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
     </div>
   </header>
 
+  <!-- ===== WAGON WHEEL ===== -->
+  <div id="wagonWrap"><canvas id="wagon" width="264" height="264"></canvas>
+    <div class="wlabel">WAGON WHEEL</div></div>
+
+  <!-- ===== MILESTONE LOWER-THIRD ===== -->
+  <div id="msCard"><div class="ms">
+      <div class="ms-k" id="msK">MILESTONE</div>
+      <div class="ms-v" id="msV">50</div>
+      <div class="ms-n" id="msN">PLAYER</div>
+      <div class="ms-s" id="msS"></div>
+  </div></div>
+
+  <!-- ===== OFFLINE BADGE ===== -->
+  <div id="offline" >CONNECTION LOST — RETRYING…</div>
+
   <!-- ===== BIG FLASH (SIX / FOUR / OUT) ===== -->
   <div id="flash"><div style="text-align:center">
       <div class="txt" id="flashTxt">SIX!</div><div class="sub" id="flashSub"></div>
@@ -716,6 +731,7 @@ function playBall(payload){
   anim.wicket = wicket;
   anim.event = ev;
   anim.shot = shot;
+  wagonAdd(shot, runs + extra);
   anim.phase = "runup";
   anim.t = 0; anim.dur = 620;
   anim.battersSwapped = false;
@@ -1044,7 +1060,7 @@ function renderAll(){
   // scorebar
   $("teamChip").style.background = b.color;
   $("sTeam").textContent = b.code;
-  $("sScore").textContent = b.score;
+  rollNumber($("sScore"), b.score);
   $("sWkts").textContent = "-" + b.wkts;
   $("sOvers").textContent = "(" + oversText(b.balls) + ")";
 
@@ -1146,6 +1162,113 @@ setInterval(() => {
   if (S.viewers < 800) S.viewers = 800;
   $("hViewers").textContent = S.viewers.toLocaleString("en-US");
 }, 2200);
+
+/* ==========================================================================
+   7b. WAGON WHEEL
+   Angles are degrees from straight-down-the-ground (0), clockwise = off side.
+   ========================================================================== */
+const WAGON = [];
+const SHOT_ANGLE = {
+  SHOT_STRAIGHT:   0,
+  SHOT_DRIVE:     40,
+  SHOT_CUT:       78,
+  SHOT_SIX:       14,
+  SHOT_PULL:     -62,
+  SHOT_HOOK:     -95,
+  SHOT_FLICK:    -32,
+  SHOT_SWEEP:   -105
+};
+const wagonCv = document.getElementById("wagon");
+const wctx = wagonCv.getContext("2d");
+
+function wagonAdd(shot, runs){
+  if (runs <= 0) return;
+  const a = SHOT_ANGLE[shot];
+  if (a == null) return;
+  WAGON.push({ a: a + (Math.random()*16 - 8), r: runs });
+  if (WAGON.length > 60) WAGON.shift();
+  drawWagon();
+}
+
+function drawWagon(){
+  const c = wctx, N = 264, cx = N/2, cy = N/2, R = N/2 - 10;
+  c.clearRect(0,0,N,N);
+  // ground
+  const g = c.createRadialGradient(cx,cy,10,cx,cy,R);
+  g.addColorStop(0,"rgba(63,143,74,.35)"); g.addColorStop(1,"rgba(29,90,44,.18)");
+  c.fillStyle = g; c.beginPath(); c.arc(cx,cy,R,0,Math.PI*2); c.fill();
+  c.strokeStyle = "rgba(255,255,255,.35)"; c.lineWidth = 2;
+  c.beginPath(); c.arc(cx,cy,R,0,Math.PI*2); c.stroke();
+  c.beginPath(); c.arc(cx,cy,R*0.55,0,Math.PI*2); c.stroke();
+  // pitch
+  c.fillStyle = "rgba(201,174,116,.85)";
+  c.fillRect(cx-9, cy-46, 18, 92);
+  c.fillStyle = "rgba(255,255,255,.85)"; c.fillRect(cx-22, cy+38, 44, 3);
+  // spokes
+  for (let i=0;i<8;i++){
+    const th = (i/8)*Math.PI*2;
+    c.strokeStyle = "rgba(255,255,255,.10)"; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(cx,cy);
+    c.lineTo(cx+Math.sin(th)*R, cy-Math.cos(th)*R); c.stroke();
+  }
+  // shots
+  WAGON.forEach((s, i) => {
+    const th = s.a * Math.PI/180;
+    const len = R * (s.r >= 4 ? 0.97 : (0.42 + s.r*0.12));
+    const x2 = cx + Math.sin(th)*len, y2 = cy - Math.cos(th)*len;
+    c.strokeStyle = s.r >= 6 ? "#c08bff" : s.r === 4 ? "#ffcc33"
+                  : s.r === 3 ? "#3ef0a0" : s.r === 2 ? "#2ee08a" : "#7fe3b0";
+    c.lineWidth = s.r >= 4 ? 5 : 3;
+    c.globalAlpha = 0.45 + 0.55 * (i / Math.max(1, WAGON.length));
+    c.beginPath(); c.moveTo(cx,cy); c.lineTo(x2,y2); c.stroke();
+    c.fillStyle = c.strokeStyle;
+    c.beginPath(); c.arc(x2,y2, s.r >= 4 ? 5 : 3.5, 0, Math.PI*2); c.fill();
+    c.globalAlpha = 1;
+  });
+  // total
+  const tot = WAGON.reduce((a,b)=>a+b.r,0);
+  c.fillStyle = "rgba(0,0,0,.55)";
+  c.fillRect(cx-38, 4, 76, 24);
+  c.fillStyle = "#fff"; c.font = "900 17px system-ui"; c.textAlign="center";
+  c.fillText(tot + " RUNS", cx, 21);
+}
+drawWagon();
+
+/* ==========================================================================
+   7c. MILESTONE CARD + SCORE ROLL
+   ========================================================================== */
+let msTimer = null;
+function showMilestone(ms){
+  const who = ms.kind === "bowl" ? (S.bowler ? S.bowler.name : "")
+                                 : (S.striker ? S.striker.name : "");
+  $("msK").textContent = ms.kind === "bowl" ? "BOWLING MILESTONE" : "MILESTONE";
+  $("msV").textContent = ms.kind === "bowl"
+      ? ms.value + " W"
+      : (ms.label === "FIFTY" || ms.label === "HUNDRED" ? ms.value : ms.value);
+  $("msN").textContent = who || "";
+  $("msS").textContent = ms.kind === "bowl"
+      ? (S.bowler ? S.bowler.overs + " overs" : "")
+      : (S.striker ? S.striker.runs + " runs · " + S.striker.balls + " balls · "
+          + S.striker.fours + "x4 · " + S.striker.sixes + "x6" : "");
+  const el = $("msCard");
+  el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  clearTimeout(msTimer);
+  msTimer = setTimeout(()=>el.classList.remove("show"), 5200);
+}
+
+/* score number roll so the score never jumps abruptly */
+function rollNumber(el, to){
+  const from = parseInt(el.textContent.replace(/[^0-9]/g,""),10) || 0;
+  if (from === to){ el.textContent = to; return; }
+  const dur = 420, t0 = performance.now();
+  function tick(now){
+    const p = Math.min(1, (now - t0)/dur);
+    const v = Math.round(from + (to - from) * (1 - Math.pow(1-p,3)));
+    el.textContent = v;
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
 
 /* ==========================================================================
    8. AUDIO ENGINE  (browser-side: TTS playback + BGM + SFX + auto-ducking)
@@ -1386,12 +1509,15 @@ async function bootstrap(){
 
 function LOG_OK(m){ if (window.console) console.log("[overlay]" + m); }
 
+let reconnectDelay = 2000;
 function connectWS(){
   if (location.protocol === "file:"){ startDemo(); return; }
-  try { ws = new WebSocket(wsUrl()); } catch(e){ startDemo(); return; }
+  try { ws = new WebSocket(wsUrl()); } catch(e){ scheduleReconnect(); return; }
 
   ws.onopen = () => {
     live = true; stopDemo(); hasServer = true;
+    reconnectDelay = 2000;
+    $("offline").classList.remove("show");
     $("statusTxt").textContent = "LIVE";
     $("status").classList.add("liveC");
     $("pMode").textContent = "LIVE MODE";
@@ -1407,8 +1533,16 @@ function connectWS(){
     $("statusTxt").textContent = "OFFLINE";
     $("status").classList.remove("liveC");
     $("pMode").textContent = "RECONNECTING";
-    setTimeout(connectWS, 4000);
+    $("offline").classList.add("show");
+    scheduleReconnect();
   };
+}
+
+function scheduleReconnect(){
+  // exponential backoff with jitter, capped at 30s — so a flaky network
+  // doesn't hammer the server (and Render doesn't stay asleep)
+  reconnectDelay = Math.min(30000, reconnectDelay * 1.6 + Math.random()*800);
+  setTimeout(connectWS, reconnectDelay);
 }
 
 function handleMessage(m){
@@ -1426,8 +1560,16 @@ function handleMessage(m){
       playBall(m.payload);
       break;
     case "tts":
-      if (Audio_.on && Audio_.started) speakUrl(m.payload.url, m.payload.text);
-      else setCommentary(m.payload.text || "", "");
+      setCommentary(m.payload.text || "", "");
+      if (Audio_.on && Audio_.started && Audio_.assets.tts !== false && m.payload.url){
+        speakUrl(m.payload.url, m.payload.text);
+      } else if (Audio_.on && m.payload.text){
+        // server TTS nahi mila -> device ki Hindi awaaz use karo
+        speakFallback(m.payload.text);
+      }
+      break;
+    case "milestone":
+      showMilestone(m.payload);
       break;
     case "sfx":
       sfx(m.payload.name === "four" ? "four" : m.payload.name === "six" ? "six" : "wicket");
@@ -1466,8 +1608,8 @@ function applyState(st){
 
   // keep the canvas jerseys in sync with the real players
   if (S.striker){    striker.name    = shortName(S.striker.name);    striker.num = S.striker.num || 0; }
-  if (S.nonStriker){ nonStriker.name = shortName(S.nonStriker.name); nonStriker.num = S.nonStriker.num || 0; }
-  if (S.bowler){     bowler.name     = shortName(S.bowler.name);     bowler.num = S.bowler.num || 0; }
+  if (S.nonStriker){ nonStriker.name = shortName(S.nonStriker.hi || S.nonStriker.name); nonStriker.num = S.nonStriker.num || 0; }
+  if (S.bowler){     bowler.name     = shortName(S.bowler.hi || S.bowler.name); bowler.num = S.bowler.num || 0; }
 
   if (S.batting && S.batting.color) document.getElementById("teamChip").style.background = S.batting.color;
   renderAll();

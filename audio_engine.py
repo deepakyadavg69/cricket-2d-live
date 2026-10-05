@@ -74,28 +74,34 @@ class AudioEngine:
                  "edge-tts" if self.enabled else "DISABLED", self.voice, self.rate)
 
     # ------------------------------------------------------------------
-    def _path_for(self, text: str, over: bool = False) -> tuple:
+    def _path_for(self, text: str, over: bool = False,
+                  rate: str = None, pitch: str = None) -> tuple:
+        # per-call prosody (six = fast & high, wicket = slower & low) — the
+        # cache key must include it or every six would reuse the dot-ball take.
         key = "|".join([
             text.strip(),
             self.voice_over if over else self.voice,
-            self.rate_over if over else self.rate,
-            self.pitch,
+            rate or (self.rate_over if over else self.rate),
+            pitch or self.pitch,
             self.volume,
         ]).encode("utf-8")
         h = hashlib.sha1(key).hexdigest()[:20]
         return os.path.join(CACHE_DIR, h + ".mp3"), "/audio/tts/" + h + ".mp3"
 
-    async def synth(self, text: str, over: bool = False) -> Optional[str]:
+    async def synth(self, text: str, over: bool = False,
+                    rate: str = None, pitch: str = None) -> Optional[str]:
         """
         Synthesise `text` to MP3 (cached). Returns the URL path, or None when
         TTS is unavailable — the overlay degrades gracefully in that case.
+
+        rate/pitch: optional per-delivery prosody, e.g. "+24%" / "+16Hz".
         """
         if not text or not text.strip():
             return None
         if not self.enabled:
             return None
 
-        path, url = self._path_for(text, over)
+        path, url = self._path_for(text, over, rate, pitch)
         if os.path.exists(path) and os.path.getsize(path) > 900:
             return url
 
@@ -103,7 +109,8 @@ class AudioEngine:
             if os.path.exists(path) and os.path.getsize(path) > 900:
                 return url
             try:
-                await asyncio.wait_for(self._synth_to(text, path, over), timeout=self.timeout)
+                await asyncio.wait_for(
+                    self._synth_to(text, path, over, rate, pitch), timeout=self.timeout)
             except asyncio.TimeoutError:
                 LOG.warning("TTS timeout for: %.40s…", text)
                 return None
@@ -120,12 +127,13 @@ class AudioEngine:
             pass
         return None
 
-    async def _synth_to(self, text: str, path: str, over: bool):
+    async def _synth_to(self, text: str, path: str, over: bool,
+                        rate: str = None, pitch: str = None):
         comm = edge_tts.Communicate(
             text=text,
             voice=(self.voice_over if over else self.voice),
-            rate=(self.rate_over if over else self.rate),
-            pitch=self.pitch,
+            rate=rate or (self.rate_over if over else self.rate),
+            pitch=pitch or self.pitch,
             volume=self.volume,
         )
         tmp = path + ".part"

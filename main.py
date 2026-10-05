@@ -38,7 +38,8 @@ from aiohttp import WSMsgType, web
 
 from audio_engine import AudioEngine
 from classifier import classify, clean_text
-from commentary import CommentaryEngine
+from commentary import CommentaryEngine, prosody_for, milestone_line, hi_name
+from classifier import WICKET_HI as WICKET_HI_TEXT
 from scraper import (
     CRICBUZZ,
     CricbuzzScraper,
@@ -139,6 +140,93 @@ def jersey(pid: int, name: str) -> int:
     return (sum(ord(c) for c in name) % 99) or 99
 
 
+class _RestartLoop(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+#  Smart extras
+# ---------------------------------------------------------------------------
+MILESTONE_HI = {50: "FIFTY", 100: "HUNDRED", 150: "150", 200: "DOUBLE HUNDRED",
+                250: "250", 300: "TRIPLE HUNDRED"}
+
+
+def parse_dismissal(text: str) -> str:
+    """
+    Cricbuzz `lastWicket` is a single string like:
+        'Sunil Kumar  c Shikhar Mohan b Mukesh Kumar 0(1)  - 111/10 in 28.4 ov.'
+        'Lone Nasir Muzaffar b Mukesh Kumar 1(3)'
+    We recover the dismissal type from it, which is far more reliable than
+    guessing from commentary text (which is often missing entirely).
+    """
+    if not text:
+        return ""
+    low = " " + text.lower() + " "
+    if "run out" in low or "run-out" in low:
+        return "OUT_RUNOUT"
+    if "hit wicket" in low or "hit-wicket" in low:
+        return "OUT_HITWICKET"
+    if " st " in low:
+        return "OUT_STUMPED"
+    if "lbw" in low:
+        return "OUT_LBW"
+    if " c " in low or " c&b " in low or " c and b " in low:
+        return "OUT_CAUGHT"
+    if " b " in low:
+        return "OUT_BOWLED"
+    return ""
+
+
+def _player_key(p: dict) -> str:
+    """
+    Identify a player by NAME first, id second. Cricbuzz re-issues player ids
+    between polls often enough that keying on id alone re-announces the same
+    fifty several times an innings; names are stable.
+    """
+    n = (p.get("name") or "").strip().upper()
+    if n:
+        return n
+    return "#" + str(p.get("id") or "")
+
+
+def detect_milestones(snap: dict, st) -> list:
+    """
+    Fire once when a batter crosses 50/100/... or a bowler takes 5/7/10.
+
+    Dedup is by (kind, player, value) in a *set*, not by a monotonic counter.
+    That matters: Cricbuzz sometimes changes a player's id between polls and
+    its CDN can hand back an older page, and either one would make a counter
+    reset and re-announce "FIFTY!" several times in the same innings.
+    """
+    out = []
+    fired = st._ms_fired
+
+    bat = snap.get("striker", {}) or {}
+    bkey = _player_key(bat)
+    runs = int(bat.get("runs", 0) or 0)
+    if bkey:
+        for m in sorted(MILESTONE_HI, reverse=True):
+            if runs >= m and ("bat", bkey, m) not in fired:
+                fired.add(("bat", bkey, m))
+                out.append({"kind": "bat", "value": m, "label": MILESTONE_HI[m]})
+                break
+
+    bw = snap.get("bowler", {}) or {}
+    wkey = _player_key(bw)
+    wk = int(bw.get("wickets", 0) or 0)
+    if wkey:
+        for m in (5, 7, 10):
+            if wk >= m and ("bowl", wkey, m) not in fired:
+                fired.add(("bowl", wkey, m))
+                out.append({"kind": "bowl", "value": m, "label": "%d WICKET HAUL" % m})
+                break
+
+    if len(fired) > 400:          # long tournament? drop the oldest half
+        for k in list(fired)[:200]:
+            fired.discard(k)
+    return out
+
+
 # ---------------------------------------------------------------------------
 #  aiohttp >= 3.14 dropped `ensure_ascii=` from json_response, so we serialise
 #  ourselves. This keeps Devanagari readable instead of \u092f escapes.
@@ -170,6 +258,9 @@ def overlay_state(snap: dict, st: "ServerState", hi: str = "", en: str = "") -> 
         if bat_code and bowl_code:
             title = "%s VS %s" % (bat_code, bowl_code)
 
+    def _hi(p):
+        return dict(p, hi=hi_name(p.get("name", ""))) if isinstance(p, dict) else p
+
     return {
         "match": {
             "title": title,
@@ -198,12 +289,12 @@ def overlay_state(snap: dict, st: "ServerState", hi: str = "", en: str = "") -> 
         "rrr": snap.get("rrr", 0.0),
         "need": snap.get("need", 0),
         "ballsLeft": snap.get("balls_left", 0),
-        "striker": dict(snap.get("striker", {}), num=jersey(snap.get("striker", {}).get("id", 0),
-                                                           snap.get("striker", {}).get("name", ""))),
-        "nonStriker": dict(snap.get("non_striker", {}), num=jersey(snap.get("non_striker", {}).get("id", 0),
-                                                                   snap.get("non_striker", {}).get("name", ""))),
-        "bowler": dict(snap.get("bowler", {}), balls=overs_to_balls(bowler_ov),
-                       num=jersey(snap.get("bowler", {}).get("id", 0), snap.get("bowler", {}).get("name", ""))),
+        "striker": _hi(dict(snap.get("striker", {}), num=jersey(snap.get("striker", {}).get("id", 0),
+                                                                snap.get("striker", {}).get("name", "")))),
+        "nonStriker": _hi(dict(snap.get("non_striker", {}), num=jersey(snap.get("non_striker", {}).get("id", 0),
+                                                                      snap.get("non_striker", {}).get("name", "")))),
+        "bowler": _hi(dict(snap.get("bowler", {}), balls=overs_to_balls(bowler_ov),
+                       num=jersey(snap.get("bowler", {}).get("id", 0), snap.get("bowler", {}).get("name", "")))),
         "thisOver": snap.get("this_over", []),
         "lastOver": snap.get("prev_over", []),
         "partnership": snap.get("partnership", 0),
@@ -237,6 +328,13 @@ class ServerState:
             "use_full_team_names": False,
             "block_logos": True,
         }
+        self.last_success = time.time()
+        self.last_ball_at = 0.0
+        self._last_bat_id = None
+        self._bat_ms = 0
+        self._last_bowl_id = None
+        self._bowl_ms = 0
+        self._ms_fired: set = set()   # (kind, player_key, value) — dekh detect_milestones
         self.status = {
             "mode": "starting",        # live | rehearse | idle
             "scraper": "starting",
@@ -380,6 +478,8 @@ class App:
         self.audio = AudioEngine(cfg.get("audio", {}))
         self.commentary = CommentaryEngine(cfg.get("commentary", {}))
         self.stop_evt = asyncio.Event()
+        self.want_rehearsal = False
+        self.want_switch = False
 
     # -- websocket helpers --------------------------------------------------
     async def broadcast(self, msg: dict):
@@ -400,9 +500,18 @@ class App:
         st = self.state
         st.status["balls_seen"] += 1
         st.status["last_ball_at"] = time.time()
+        st.last_ball_at = time.time()
 
         text_en = clean_text(ev.get("text_en", ""))
         cls = classify(text_en, ev.get("runs", 0), ev.get("wicket", False), ev.get("extra", False))
+
+        # commentary text is frequently missing -> recover the dismissal type
+        # from Cricbuzz's `lastWicket` string instead of guessing
+        if cls["is_wicket"]:
+            dtype = parse_dismissal(snap.get("last_wicket", ""))
+            if dtype:
+                cls["wicket_type"] = dtype
+                cls["wicket_hi"] = WICKET_HI_TEXT.get(dtype, "आउट")
 
         ctx = {
             "runs": ev.get("runs", 0),
@@ -457,7 +566,8 @@ class App:
         })
 
         # ---- TTS (non-blocking so animation is never delayed) ----------------
-        asyncio.create_task(self.speak(hi, kind="ball"))
+        pro = prosody_for(cls)
+        asyncio.create_task(self.speak(hi, kind="ball", rate=pro["rate"], pitch=pro["pitch"]))
 
         # ---- SFX hint (browser plays the mp3 if present, else synthesises) ---
         sfx = "six" if cls["is_six"] else ("four" if cls["is_four"] else ("wicket" if cls["is_wicket"] else None))
@@ -472,8 +582,8 @@ class App:
         if ev.get("over_end"):
             await self.handle_over_end(snap, over_no, st.over_events)
 
-    async def speak(self, text: str, kind: str = "ball"):
-        url = await self.audio.synth(text, over=(kind == "over"))
+    async def speak(self, text: str, kind: str = "ball", rate: str = None, pitch: str = None):
+        url = await self.audio.synth(text, over=(kind == "over"), rate=rate, pitch=pitch)
         if not url:
             return
         self.state.status["tts"] = True
@@ -504,23 +614,42 @@ class App:
     async def on_snapshot(self, snap: dict, ev):
         st = self.state
         st.snap = snap
+        st.last_success = time.time()
         st.status["scraper"] = "ok"
         st.status["match_id"] = snap.get("match_id")
         st.status["title"] = snap.get("title", "")
 
         if ev and ev.get("type") == "ball":
             await self.handle_ball(snap, ev)
-        elif ev and ev.get("type") in ("innings_break", "reset"):
+        elif ev and ev.get("type") == "innings_break":
             st.over_events = []
             await self.broadcast({"type": "status", "payload": st.status})
+        elif ev and ev.get("type") == "stale":
+            # CDN served an older page — ignore it, keep the over timeline intact
+            pass
         elif ev and ev.get("type") == "catchup":
             # score resync (missed balls / site correction) — update silently,
             # do NOT animate or speak a fake delivery
             LOG.info("score resync: +%s runs, +%s wkts (no ball event)",
                      ev.get("runs", 0), ev.get("wickets", 0))
             st.over_events = []
-            st.over_events = []
             await self.broadcast({"type": "status", "payload": st.status})
+
+        # milestones (fifty / century / five-for) — fire once each
+        for ms in detect_milestones(snap, st):
+            await self.broadcast({"type": "milestone", "payload": ms})
+            LOG.info("[milestone] %s %s", ms["kind"], ms["label"])
+            if self.audio.enabled:
+                line = milestone_line(
+                    "FIFTY" if ms["value"] == 50 else "HUNDRED" if ms["value"] == 100 else "FIVE_FOR",
+                    {"striker_name": snap.get("striker", {}).get("name", ""),
+                     "bowler_name": snap.get("bowler", {}).get("name", "")},
+                )
+                if line:
+                    asyncio.create_task(self.speak(
+                        line, kind="ball",
+                        rate=prosody_for({"milestone": True})["rate"],
+                        pitch=prosody_for({"milestone": True})["pitch"]))
 
         st.overlay = overlay_state(snap, st, st.last_hi, st.last_en)
         await self.broadcast({"type": "state", "payload": st.overlay})
@@ -596,18 +725,110 @@ class App:
                 bi += 1
             ev = {
                 "type": "ball", "runs": runs, "wicket": wicket, "extra": False, "legal": True,
-                "over_end": over_end, "over_number": balls // 6,
-                "ball_in_over": balls % 6 or 6, "text_en": text_en,
+                "over_end": over_end,
+                "over_number": (balls - 1) // 6,
+                "ball_in_over": ((balls - 1) % 6) + 1, "text_en": text_en,
                 "this_over": [], "prev_over": [],
             }
             await self.on_snapshot(snap, ev)
             await asyncio.sleep(max(3.0, float(self.cfg["scraper"].get("poll_seconds", 5)) - 1.0))
 
+    # -- watchdog: stream kabhi mara nahi hona chahiye ----------------------
+    async def watchdog(self):
+        """
+        Two jobs, both about never letting the broadcast die mid-match:
+
+        1. STALE SCRAPER  - if Cricbuzz stops answering (blocked IP, redesign,
+           network blip) for 3 minutes, fall back to the rehearsal feed so the
+           stream keeps animating instead of freezing on a dead scoreboard.
+
+        2. MATCH FINISHED - if the current match is Complete/Result and no new
+           ball has arrived for 5 minutes, auto-switch to the next live match.
+        """
+        st = self.state
+        last_switch_check = 0.0
+        while not self.stop_evt.is_set():
+            await asyncio.sleep(20)
+            now = time.time()
+
+            if now - st.last_success > 180:
+                LOG.warning("scraper stale for %.0fs -> rehearsal", now - st.last_success)
+                self.want_rehearsal = True
+                return
+
+            if now - last_switch_check > 120:
+                last_switch_check = now
+                snap = st.snap or {}
+                finished = snap.get("match_state") in ("complete", "result")
+                idle = (now - st.last_ball_at) if st.last_ball_at else 999
+                if finished and idle > 300:
+                    LOG.info("match finished (idle %.0fs) -> auto-switch", idle)
+                    self.want_switch = True
+                    return
+
     # -- main poll loop -----------------------------------------------------
     async def live_loop(self):
         st = self.state
         await self.scraper.start()
-        ok = await self.scraper.resolve_match()
+
+        for _attempt in range(12):
+            self.want_rehearsal = False
+            self.want_switch = False
+            try:
+                ok = await self.scraper.resolve_match()
+                if not ok:
+                    st.status["scraper"] = "no_match"
+                    await self.broadcast({"type": "status", "payload": st.status})
+                    await self.rehearsal_loop()
+                    return
+
+                snap = await self.scraper.snapshot()
+                if not snap:
+                    await self.rehearsal_loop()
+                    return
+
+                # --rehearse = force the synthetic feed (practice bina live match ke)
+                if self.args.rehearse or not snap.get("is_live"):
+                    if not snap.get("is_live"):
+                        LOG.info("Auto-picked match is not live -> rehearsal feed")
+                    await self.rehearsal_loop()
+                    return
+
+                st.status["mode"] = "live"
+                LOG.info("Streaming match %s — %s", self.scraper.match_id, snap.get("title"))
+                await self.broadcast({"type": "status", "payload": st.status})
+
+                from scraper import poll_loop
+
+                poll = asyncio.create_task(
+                    poll_loop(self.scraper, self.on_snapshot, self.stop_evt.is_set))
+                watch = asyncio.create_task(self.watchdog())
+                _done, pending = await asyncio.wait(
+                    {poll, watch}, return_when=asyncio.FIRST_COMPLETED)
+                for t in pending:
+                    t.cancel()
+                    try:
+                        await t
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
+                if self.want_rehearsal:
+                    LOG.warning("Falling back to rehearsal feed")
+                    await self.rehearsal_loop()
+                    return
+                if self.want_switch:
+                    LOG.info("Match khatam — agla live match dhoondh rahe hain…")
+                    self.scraper.match_id = None
+                    self.scraper.slug = "live"
+                    st.last_over_number = -1
+                    st.over_events = []
+                    st.last_success = time.time()
+                    await asyncio.sleep(5)
+                    continue
+                return
+            except _RestartLoop:
+                continue
+        LOG.error("too many match switches, giving up")
         if not ok:
             st.status["scraper"] = "no_match"
             await self.broadcast({"type": "status", "payload": st.status})
@@ -629,7 +850,18 @@ class App:
 
         from scraper import poll_loop
 
-        await poll_loop(self.scraper, self.on_snapshot, self.stop_evt.is_set)
+        poll = asyncio.create_task(poll_loop(self.scraper, self.on_snapshot, self.stop_evt.is_set))
+        watch = asyncio.create_task(self.watchdog())
+        _done, pending = await asyncio.wait({poll, watch}, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        for t in pending:
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+
+                return
 
     # -- HTTP handlers ------------------------------------------------------
     async def h_index(self, request):
