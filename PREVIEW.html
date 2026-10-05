@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SPORTS GYAN — Overlay Preview: kahan kya dikhega</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#071018;color:#e7f1f8;
+       font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Devanagari",sans-serif;
+       padding:26px 18px 70px;line-height:1.55}
+  .wrap{max-width:1240px;margin:0 auto}
+  h1{font-size:29px;letter-spacing:.4px;margin-bottom:5px}
+  h1 span{color:#1de9b6}
+  .sub{color:#8fb2cc;font-size:15px;margin-bottom:26px}
+  h2{font-size:20px;margin:38px 0 14px;color:#ffd24a;
+     border-left:4px solid #ffd24a;padding-left:11px}
+
+  /* ---------- 16:9 mockup ---------- */
+  .stage{position:relative;width:100%;aspect-ratio:16/9;
+     background:linear-gradient(180deg,#0b1a2b,#081420);
+     border:2px solid #24485e;border-radius:12px;overflow:hidden;
+     box-shadow:0 30px 80px rgba(0,0,0,.6)}
+  .stage .row{position:absolute;left:0;right:0}
+
+  /* header */
+  .hdr{top:0;height:8.9%;background:linear-gradient(180deg,#0d2038,#0a1728);
+       border-bottom:2px solid #1de9b6;display:flex;align-items:center;
+       justify-content:space-between;padding:0 1.6%}
+  .live{background:#e8112d;color:#fff;font-weight:900;font-size:clamp(7px,1.05vw,15px);
+        letter-spacing:2px;padding:.35em .8em;border-radius:5px;
+        box-shadow:0 4px 18px rgba(232,17,45,.55)}
+  .title{font-size:clamp(8px,1.25vw,19px);font-weight:900;letter-spacing:.3px}
+  .tgt{font-size:clamp(7px,1vw,14px);color:#9fcee8;font-weight:700;text-align:right}
+
+  /* ground */
+  .gnd{top:8.9%;height:55.9%}
+  .gnd svg{width:100%;height:100%;display:block}
+  .wagon{position:absolute;right:1.4%;top:11%;width:14.2%;aspect-ratio:1;
+     border-radius:50%;background:rgba(4,12,22,.72);border:2px solid #1de9b6;
+     display:flex;align-items:flex-end;justify-content:center;
+     font-size:clamp(6px,.85vw,12px);font-weight:900;letter-spacing:1.4px;
+     color:#7d97ad;padding-bottom:6%}
+
+  /* scorebar */
+  .sb{top:64.8%;height:18.5%;background:linear-gradient(180deg,#0d2038,#0a1728);
+      border-top:3px solid #1de9b6;display:flex;align-items:center;
+      padding:0 1.6%;gap:1.6%}
+  .chip{width:.7%;height:52%;background:#0a4bd6;border-radius:3px}
+  .blk{display:flex;align-items:baseline;gap:.7%}
+  .tm{font-size:clamp(9px,1.7vw,26px);font-weight:900}
+  .sc{font-size:clamp(16px,3.6vw,56px);font-weight:900;line-height:.86;color:#1de9b6}
+  .wk{font-size:clamp(8px,1.5vw,23px);font-weight:800;color:#ff8a9c}
+  .ov{font-size:clamp(7px,1.2vw,18px);font-weight:800;color:#8fb2cc}
+  .dv{width:2px;height:56%;background:rgba(255,255,255,.14)}
+  .mini{font-size:clamp(6px,.95vw,14px);line-height:1.7}
+  .mini .t{font-size:clamp(5px,.72vw,11px);font-weight:900;letter-spacing:1.3px;
+     background:rgba(255,255,255,.13);padding:.2em .55em;border-radius:4px;color:#a9c6dc}
+  .mini .t.on{background:#1de9b6;color:#04241c}
+  .mini .t.bw{background:#ff9d3d;color:#3d1a00}
+  .cd{margin-left:auto;display:flex;align-items:center;gap:.7%;
+      padding:.5em .9em;border-radius:9px;
+      background:linear-gradient(100deg,rgba(232,17,45,.24),rgba(232,17,45,.06));
+      border:2px solid rgba(255,138,156,.5)}
+  .cd .l{font-size:clamp(5px,.72vw,11px);font-weight:900;letter-spacing:2px;color:#ff9fb0}
+  .cd .m{font-size:clamp(9px,1.85vw,28px);font-weight:900}
+  .cd .m i{font-size:.55em;font-style:normal;color:#ff9fb0;margin:0 .25em}
+
+  /* ticker */
+  .tk{bottom:0;height:16.7%;background:rgba(3,9,16,.92);
+      border-top:2px solid rgba(255,255,255,.09);
+      display:flex;align-items:center;padding:0 1.6%;gap:1.2%}
+  .tk .hi{font-size:clamp(8px,1.55vw,24px);font-weight:800;
+      color:#fff;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .tk .en{font-size:clamp(6px,1.05vw,16px);color:#7d97ad;font-weight:600;
+      max-width:34%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .tk .br{font-size:clamp(6px,1vw,15px);font-weight:900;color:#1de9b6;
+      letter-spacing:1.5px;white-space:nowrap}
+
+  /* callout badges */
+  .pin{position:absolute;width:clamp(15px,2.1vw,30px);height:clamp(15px,2.1vw,30px);
+       border-radius:50%;background:#ffd24a;color:#3d2a00;
+       font-size:clamp(9px,1.15vw,16px);font-weight:900;
+       display:flex;align-items:center;justify-content:center;
+       box-shadow:0 3px 12px rgba(0,0,0,.65);border:2px solid #fff5cf;z-index:20}
+  .p1{left:3%;top:2.4%}      .p2{left:44%;top:2.4%}     .p3{right:2.5%;top:2.4%}
+  .p4{left:1.2%;top:26%}     .p5{left:47.5%;top:30%}    .p6{left:24%;top:56%}
+  .p7{left:47%;top:13%}      .p8{right:2%;top:13%}      .p9{left:1.5%;top:66.5%}
+  .p10{left:24%;top:66.5%}   .p11{right:9%;top:66.5%}   .p12{left:1.5%;bottom:11%}
+  .p13{right:2.5%;bottom:11%}
+
+  /* ---------- legend ---------- */
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));
+          gap:11px;margin-top:16px}
+  .lg{display:flex;gap:11px;background:#0c1c2b;
+      border:1px solid #1e3a4f;border-radius:9px;padding:11px 13px}
+  .lg .n{flex:0 0 auto;width:24px;height:24px;border-radius:50%;
+         background:#ffd24a;color:#3d2a00;font-weight:900;font-size:13px;
+         display:flex;align-items:center;justify-content:center}
+  .lg b{display:block;font-size:14px;margin-bottom:2px}
+  .lg span{font-size:12.5px;color:#9dbdd4}
+
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #1b3348;vertical-align:top}
+  th{color:#1de9b6;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;
+     background:#0c1c2b}
+  td:first-child{font-weight:800;white-space:nowrap;color:#ffd24a}
+  tr:hover td{background:#0c1c2b}
+  .note{background:#0c1c2b;border-left:4px solid #1de9b6;padding:13px 16px;
+        border-radius:0 8px 8px 0;margin-top:14px;font-size:13.5px;color:#bcd6e8}
+  .warn{background:#2a1418;border-left:4px solid #ff8a9c;padding:13px 16px;
+        border-radius:0 8px 8px 0;margin-top:14px;font-size:13.5px;color:#ffd0d8}
+  code{background:#0a1622;padding:2px 7px;border-radius:4px;color:#1de9b6;
+       font-size:12.5px}
+  .k{display:inline-block;background:#1de9b6;color:#04241c;font-weight:900;
+     font-size:11px;padding:2px 8px;border-radius:4px;letter-spacing:.6px}
+  .k.r{background:#e8112d;color:#fff}
+  @media(max-width:700px){ .legend{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>SPORTS GYAN — <span>Overlay Preview</span></h1>
+  <p class="sub">1920 × 1080 broadcast layout — kaunsi cheez screen par kahan dikhegi, aur kis waqt kya hoga.
+  Yeh file seedhi browser mein khul jayegi, koi internet nahi chahiye.</p>
+
+  <h2>1 · Screen layout (16:9)</h2>
+
+  <div class="stage">
+    <!-- header -->
+    <div class="row hdr">
+      <div class="live">● LIVE</div>
+      <div class="title">IU <span style="color:#8fb2cc">VS</span> AU &nbsp;·&nbsp; 2nd T20I</div>
+      <div class="tgt">TARGET 187<br>RRR 9.75 · CRR 8.60</div>
+    </div>
+
+    <!-- ground -->
+    <div class="row gnd">
+      <svg viewBox="0 0 1920 604" preserveAspectRatio="none">
+        <defs>
+          <radialGradient id="out" cx="50%" cy="50%" r="55%">
+            <stop offset="0%"  stop-color="#2f6f3e"/>
+            <stop offset="100%" stop-color="#1d5a2c"/>
+          </radialGradient>
+          <radialGradient id="inn" cx="50%" cy="50%" r="60%">
+            <stop offset="0%"  stop-color="#438f4f"/>
+            <stop offset="100%" stop-color="#2b6b3a"/>
+          </radialGradient>
+        </defs>
+        <!-- outfield -->
+        <ellipse cx="960" cy="300" rx="930" ry="288" fill="url(#out)"/>
+        <!-- 30-yard circle -->
+        <ellipse cx="960" cy="300" rx="470" ry="150" fill="url(#inn)"/>
+        <ellipse cx="960" cy="300" rx="470" ry="150" fill="none"
+                 stroke="rgba(255,255,255,.45)" stroke-width="3"/>
+        <ellipse cx="960" cy="300" rx="930" ry="288" fill="none"
+                 stroke="rgba(255,255,255,.5)" stroke-width="4"/>
+        <!-- advertising boards -->
+        <ellipse cx="960" cy="300" rx="946" ry="304" fill="none"
+                 stroke="rgba(10,25,45,.55)" stroke-width="12" stroke-dasharray="64 40"/>
+        <!-- pitch -->
+        <rect x="930" y="120" width="60" height="364" fill="#c9ae74" rx="4"/>
+        <rect x="930" y="120" width="60" height="364" fill="none"
+              stroke="rgba(0,0,0,.25)" stroke-width="2"/>
+        <!-- creases -->
+        <rect x="905" y="150" width="110" height="5" fill="rgba(255,255,255,.85)"/>
+        <rect x="905" y="450" width="110" height="5" fill="rgba(255,255,255,.85)"/>
+        <!-- stumps -->
+        <g fill="#f6f1e2" stroke="rgba(0,0,0,.35)">
+          <rect x="947" y="116" width="5" height="36"/><rect x="958" y="116" width="5" height="36"/>
+          <rect x="969" y="116" width="5" height="36"/>
+          <rect x="947" y="448" width="5" height="36"/><rect x="958" y="448" width="5" height="36"/>
+          <rect x="969" y="448" width="5" height="36"/>
+        </g>
+        <!-- bowler -->
+        <g><circle cx="960" cy="78" r="17" fill="#0a8f4b"/>
+           <text x="960" y="60" font-size="17" font-weight="900" fill="#cfe8d9"
+                 text-anchor="middle">BOWLER</text></g>
+        <!-- batsmen -->
+        <g><circle cx="838" cy="432" r="17" fill="#0a4bd6"/>
+           <text x="838" y="470" font-size="17" font-weight="900" fill="#dbe9ff"
+                 text-anchor="middle">STRIKER</text></g>
+        <g><circle cx="924" cy="120" r="17" fill="#0a4bd6"/>
+           <text x="924" y="98" font-size="17" font-weight="900" fill="#dbe9ff"
+                 text-anchor="middle">NON-STR</text></g>
+        <!-- keeper + umpire -->
+        <circle cx="960" cy="498" r="15" fill="#123024"/>
+        <circle cx="1010" cy="56" r="15" fill="#1b2740"/>
+        <!-- 9 fielders -->
+        <g fill="#e8eef5" stroke="rgba(0,0,0,.35)">
+          <circle cx="1064" cy="250" r="14"/><circle cx="1240" cy="352" r="14"/>
+          <circle cx="1280" cy="262" r="14"/><circle cx="1046" cy="74"  r="14"/>
+          <circle cx="856"  cy="74"  r="14"/><circle cx="452"  cy="92"  r="14"/>
+          <circle cx="1470" cy="96"  r="14"/><circle cx="552"  cy="512" r="14"/>
+          <circle cx="1392" cy="520" r="14"/>
+        </g>
+        <!-- ball + trail + shot line -->
+        <g stroke="rgba(255,255,255,.55)" stroke-width="3" stroke-dasharray="10 8" fill="none">
+          <path d="M960 92 L960 420"/>
+          <path d="M858 410 Q1100 300 1240 352"/>
+        </g>
+        <circle cx="1240" cy="352" r="9" fill="#fff" stroke="#c2372f" stroke-width="2"/>
+        <!-- +4 popup example -->
+        <text x="1180" y="250" font-size="58" font-weight="900" fill="#ffd24a"
+              stroke="rgba(0,0,0,.8)" stroke-width="8" text-anchor="middle">+4</text>
+      </svg>
+
+      <div class="wagon">WAGON WHEEL</div>
+    </div>
+
+    <!-- scorebar -->
+    <div class="row sb">
+      <div class="chip"></div>
+      <div class="blk">
+        <div class="tm">IU</div>
+        <div class="sc">148</div>
+        <div class="wk">-3</div>
+        <div class="ov">(16.2)</div>
+      </div>
+      <div class="dv"></div>
+      <div class="mini">
+        <div><span class="t on">BAT</span> विराट कोहली <b>62</b>(38)</div>
+        <div><span class="t on">BAT</span> केएल राहुल <b>33</b>(24)</div>
+      </div>
+      <div class="dv"></div>
+      <div class="mini">
+        <div><span class="t bw">BOWL</span> मिशेल स्टार्क <b>3.2-0-31-1</b></div>
+        <div><span class="t">ECO</span> 9.30 · This over <b>9</b></div>
+      </div>
+      <div class="cd">
+        <div class="l">NEED</div>
+        <div class="m">39<i>IN</i>24</div>
+        <div class="l">RRR<br>9.75</div>
+      </div>
+    </div>
+
+    <!-- ticker -->
+    <div class="row tk">
+      <div class="hi">"चौका! विराट कोहली की शानदार ड्राइव, चार रन! क्या टाइमिंग है!"</div>
+      <div class="en">Driven sweetly through the covers, FOUR more!</div>
+      <div class="br">SPORTS GYAN · @sportsgyanin</div>
+    </div>
+
+    <!-- callout pins -->
+    <div class="pin p1">1</div><div class="pin p2">2</div><div class="pin p3">3</div>
+    <div class="pin p4">4</div><div class="pin p5">5</div><div class="pin p6">6</div>
+    <div class="pin p7">7</div><div class="pin p8">8</div><div class="pin p9">9</div>
+    <div class="pin p10">10</div><div class="pin p11">11</div>
+    <div class="pin p12">12</div><div class="pin p13">13</div>
+  </div>
+
+  <div class="legend">
+    <div class="lg"><div class="n">1</div><div><b>LIVE badge</b><span>Lal, dhadakta hua. Data aana band ho to <code>OFFLINE</code> ho jata hai.</span></div></div>
+    <div class="lg"><div class="n">2</div><div><b>Match title</b><span>Privacy mode me sirf short code (<code>IU VS AU</code>), poora team naam nahi.</span></div></div>
+    <div class="lg"><div class="n">3</div><div><b>Target · RRR · CRR</b><span>Chase chal raha ho to upar right me. Pehli pari me khali rehta hai.</span></div></div>
+    <div class="lg"><div class="n">4</div><div><b>9 Fielders</b><span>Ball jiske paas jaye wo chamak uthta hai + uski position ka label (SLIP, POINT, COVER…).</span></div></div>
+    <div class="lg"><div class="n">5</div><div><b>Pitch + stumps</b><span>Ball bounce kare to pitch par nishaan padta hai. Wicket par bail udte hain.</span></div></div>
+    <div class="lg"><div class="n">6</div><div><b>Striker</b><span>Neela. Shot ke hisaab se ball udta hai — ball ke peeche safed trail.</span></div></div>
+    <div class="lg"><div class="n">7</div><div><b>Bowler</b><span>Hara. Run-up karta hai, ball chhodta hai. Strike rotate ho to batsman badal jate hain.</span></div></div>
+    <div class="lg"><div class="n">8</div><div><b>Wagon wheel</b><span>Har scoring shot ki disha. Sona = chauke, baingani = chhakke, hara = 1-3 run.</span></div></div>
+    <div class="lg"><div class="n">9</div><div><b>BADA SCORE</b><span>118px — score, wicket, overs. Number dheere-dheere ghoom kar badhta hai, koodta nahi.</span></div></div>
+    <div class="lg"><div class="n">10</div><div><b>Batsmen ki jankari</b><span>Hindi naam, run, ball. <b>Koi jersey number nahi</b> — Cricbuzz deta hi nahi.</span></div></div>
+    <div class="lg"><div class="n">11</div><div><b>LIVE COUNTDOWN</b><span>Chase me: <code>NEED 39 IN 24</code> + RRR. Har ball par ghat-ta rahta hai.</span></div></div>
+    <div class="lg"><div class="n">12</div><div><b>Hindi commentary</b><span>Neeche ticker me likhi line + usi waqt <b>awaaz</b> (Madhur, Chopra-style).</span></div></div>
+    <div class="lg"><div class="n">13</div><div><b>Branding</b><span>SPORTS GYAN · @sportsgyanin · logo SG.</span></div></div>
+  </div>
+
+  <h2>2 · Match ke dauraan kya hota hai</h2>
+  <table>
+    <tr><th>Waqt</th><th>Screen par kya dikhega</th><th>Awaaz</th></tr>
+    <tr><td>Har ball</td>
+        <td>Bowler run-up → ball udta hai (trail + ghoomti seam) → batsman shot → fielders ball ki taraf daudte hain → ball ke paas wala fielder chamak uthta hai</td>
+        <td>Bat ki "thap" + Hindi commentary</td></tr>
+    <tr><td>Chauka (4)</td>
+        <td>Screen kinaron se sona chamak · boundary par failta gola · bheed ki lehr · <b>+4</b> hawa mein uthta hai</td>
+        <td>Bheed ki cheer + "चौका!"</td></tr>
+    <tr><td>Chhakka (6)</td>
+        <td>Wahi, par baingani aur zor ka · <b>+6</b> · wagon wheel me lambi baingani lakeer</td>
+        <td>Bada roar + seeti + "छक्का!!"</td></tr>
+    <tr><td>Wicket</td>
+        <td>Bail udte hain · stumps hilte hain · poora ground jhoom uthta hai</td>
+        <td>Appeal + bheed ka shor + "आउट!!"</td></tr>
+    <tr><td>Fifty / Century</td>
+        <td>Beech me bada sona <b>MILESTONE card</b> (naam, run, ball, 4/6) · 5 second</td>
+        <td>"अर्धशतक पूरा!" + taliyon ki bhed</td></tr>
+    <tr><td>5/7/10 wicket</td>
+        <td>Wahi sona card, bowler ke naam ke saath</td>
+        <td>"5 विकेट! कमाल की गेंदबाज़ी!"</td></tr>
+    <tr><td>Over khatam</td>
+        <td>Bada card: over number, kul run, aur <b>6 ball ke badges</b> (har ball ka alag)</td>
+        <td>10 second ki Hindi summary</td></tr>
+    <tr><td>Beech ka waqt</td>
+        <td>Scoreboard live rehta hai · bheed ki halki gun-gun (BGM) chalti rehti hai</td>
+        <td>Stadium ambience (royalty-free)</td></tr>
+  </table>
+
+  <h2>3 · Awaaz kaise chalti hai (ducking)</h2>
+  <div class="note">
+    <b>Commentary ke waqt BGM apne aap dhima ho jata hai, phir wapas tez:</b><br>
+    <span class="k">BGM 100%</span> → commentary shuru → <span class="k">BGM 20%</span> → commentary khatam → <span class="k">BGM 100%</span><br><br>
+    Chauke/chhakke par awaaz <b>tez aur unchi</b> hoti hai (<code>+24%/+16Hz</code>), wicket par <b>dhimi aur gehri</b>
+    (<code>+10%/−6Hz</code>), dot ball par bilkul sidhi (<code>+8%</code>). Isse awaaz robot jaisi nahi lagti.
+  </div>
+
+  <h2>4 · Delay kaise manage hoti hai (playout buffer)</h2>
+  <div class="note">
+    Channel <b>~10 second piche</b> chalega — par <b>picture, scoreboard aur awaaz ek saath</b> rahenge.
+    Har event queue me jata hai aur theek 10 second baad, kam se kam 2.2 second ke faasle se nikalta hai.<br><br>
+    Isse fayda: Cricbuzz ek baar me 3 ball de de to bhi commentary ek saath nahi ghus-ti — sab ek-ek karke,
+    ek hi raftaar se aata hai. <b>Measured: 31/32 balls par animation + SFX + awaaz bilkul ek saath (0.000s).</b>
+  </div>
+
+  <h2>5 · Kab kya dikhega — privacy & safety</h2>
+  <table>
+    <tr><th>Cheez</th><th>Status</th><th>Kyun</th></tr>
+    <tr><td>Team ke poore naam</td><td>❌ Nahi</td><td>Aapki "thoda safe banao" wali baat — sirf short code</td></tr>
+    <tr><td>Team logo</td><td>❌ Nahi</td><td>Copyright strike se bachav</td></tr>
+    <tr><td>Player ke jersey number</td><td>❌ Nahi</td><td>Cricbuzz ye data deta hi nahi — nakli = galat</td></tr>
+    <tr><td>Player ke naam</td><td>✅ Asli</td><td>Cricbuzz se seedhe, Hindi me</td></tr>
+    <tr><td>BGM / SFX</td><td>✅ Royalty-free</td><td>Computer se banaya gaya — Content ID kabhi flag nahi karega</td></tr>
+    <tr><td>Commentary</td><td>✅ Apni</td><td>Hamare template likhte hain, Cricbuzz ki line copy nahi hoti</td></tr>
+  </table>
+
+  <h2>6 · Live jane ka chhota tareeka</h2>
+  <table>
+    <tr><th>Step</th><th>Kya karna hai</th></tr>
+    <tr><td>1</td><td><code>/admin</code> kholo → live match chuno</td></tr>
+    <tr><td>2</td><td>Naye tab me <code>/?auto=1</code> → <b>screen par ek baar tap karo</b> (awaaz ke liye)</td></tr>
+    <tr><td>3</td><td>Prism Live Studio → <b>Live</b> → source = <b>ScreenCast</b> (Web source mat chunna)</td></tr>
+    <tr><td>4</td><td>Internal sound 100% · Mic 0% · 1080p · 8000–12000 kbps → <b>Go Live</b></td></tr>
+  </table>
+  <div class="warn">
+    <b>Sabse zaroori:</b> cron-job.org par <code>/api/health</code> ko har 5 minute ping lagao.
+    Warna Render ~15 minute baad so jata hai aur stream beech me 30–50 second freeze ho jati hai.
+  </div>
+
+  <p style="margin-top:34px;color:#5f7d93;font-size:12.5px;text-align:center">
+    SPORTS GYAN · @sportsgyanin · yeh file offline bhi khul jayegi
+  </p>
+</div>
+</body>
+</html>

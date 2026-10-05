@@ -868,7 +868,11 @@ function loop(now){
   updateAnim(dt);
   updateFielders(dt);
 
+  updateFX(dt);
+
   drawGround();
+  drawCrowd();
+  drawFX();
   drawFielders();
   drawBowler();
   drawBatsmen();
@@ -909,9 +913,18 @@ function updateAnim(dt){
   anim.showBatSwing = 1 - p;
   pushTrail();
   if (p >= 1){
+  // bat se ball takra gaya — chamak + pitch par nishaan
+  FX.flash = 1;
+  fxMark(anim.to.x, anim.to.y);
   anim.phase = "shot"; anim.t = 0;
   anim.dur = (anim.runs >= 4) ? 900 : 620;
   anim.from = { x: striker.x + 20, y: striker.y - 22 };
+  if (anim.wicket){
+    // bowled / hit-wicket: bail udte hain; catch-LBW me bhi dikhaye to
+    // achha lagta hai (TV me bhi replay ke saath dikhate hain)
+    fxBails(G.cx, G.creaseBot);
+    FX.crowd = Math.max(FX.crowd, 1);
+  }
   if (anim.chaseFielder) anim.chaseFielder.react = 1;
   // all fielders react slightly
   FIELDERS.forEach(f => { if (f !== anim.chaseFielder) f.react = Math.max(f.react, .35); });
@@ -926,6 +939,15 @@ function updateAnim(dt){
   ball.z = Math.sin(Math.PI * q) * anim.arc2;
   pushTrail();
   if (p >= 1){
+  // boundary: "+4" / "+6" popup, failta gola, aur bheed ki lehr
+  if (anim.runs >= 4){
+    const six = anim.runs >= 6;
+    fxPopup(anim.to2.x, anim.to2.y - 40, "+" + anim.runs,
+            six ? "#d9a8ff" : "#ffd24a");
+    fxRipple(anim.to2.x, anim.to2.y,
+             six ? 200 : 255, six ? 150 : 205, six ? 255 : 70);
+    FX.crowd = 1;
+  }
   if (anim.runs > 0 && !anim.battersSwapped){
   anim.phase = "running"; anim.t = 0; anim.dur = 480 * Math.min(3, anim.runs);
   runPhase = 0;
@@ -981,6 +1003,142 @@ function pushTrail(){
   if (ball.trail.length > 16) ball.trail.shift();
 }
 
+
+/* ==========================================================================
+   5b. EXTRA EFFECTS — ball spin, pitch mark, bat flash, +4/+6 popup,
+       boundary ripple, udte bail, crowd wave
+   ========================================================================== */
+const FX = {
+  popups: [],    // "+4" / "+6" hawa mein uthta hua
+  marks:  [],    // pitch par wah nishaan jahaan ball ne bounce liya
+  ripples:[],    // boundary par failta hua gola
+  bails:  [],    // wicket par udte bail
+  flash:  0,     // bat se ball ke takrane ki chamak
+  crowd:  0,     // bheed ki lehr
+  spin:   0      // ball ki ghoomti hui seam
+};
+
+function fxPopup(x, y, text, color){
+  FX.popups.push({ x:x, y:y, text:text, color:color, t:0, dur:1500 });
+}
+function fxMark(x, y){
+  FX.marks.push({ x:x, y:y, t:0 });
+  if (FX.marks.length > 10) FX.marks.shift();
+}
+function fxRipple(x, y, r, g, b){
+  FX.ripples.push({ x:x, y:y, r:r, g:g, b:b, t:0, dur:950 });
+}
+function fxBails(x, y){
+  for (let i = 0; i < 2; i++){
+    FX.bails.push({
+      x: x + (i ? 7 : -7), y: y - 40,
+      vx: (i ? 1 : -1) * (55 + Math.random()*70),
+      vy: -130 - Math.random()*70,
+      rot: 0, vr: (Math.random() - 0.5) * 14, t: 0
+    });
+  }
+}
+
+function updateFX(dt){
+  FX.spin  += dt * 0.021;
+  FX.flash = Math.max(0, FX.flash - dt / 230);
+  FX.crowd = Math.max(0, FX.crowd - dt / 1400);
+
+  FX.popups.forEach(p => p.t += dt);
+  FX.popups = FX.popups.filter(p => p.t < p.dur);
+
+  FX.marks.forEach(m => m.t += dt);
+  FX.marks = FX.marks.filter(m => m.t < 7000);
+
+  FX.ripples.forEach(r => r.t += dt);
+  FX.ripples = FX.ripples.filter(r => r.t < r.dur);
+
+  FX.bails.forEach(b => {
+    b.t  += dt;
+    b.x  += b.vx * dt / 1000;
+    b.y  += b.vy * dt / 1000;
+    b.vy += 620 * dt / 1000;          // gravity
+    b.rot += b.vr * dt / 1000;
+  });
+  FX.bails = FX.bails.filter(b => b.t < 1500);
+}
+
+/* Bheed: boundary ke bahar chhote chhote darshak. Boundary / wicket par
+   ek lehr daudti hai — poora ground jhoom uthta hai. */
+function drawCrowd(){
+  const c = ctx, n = 210;
+  for (let i = 0; i < n; i++){
+    const th = (i / n) * Math.PI * 2;
+    const bob = 1 + 0.014 * Math.sin(th * 7 + FX.crowd * 7);
+    const x = G.cx + Math.cos(th) * (G.rx + 38) * bob;
+    const y = G.cy + Math.sin(th) * (G.ry + 38) * bob;
+    const wave = Math.sin(th * 9 - FX.crowd * 11);
+    const lit  = FX.crowd > 0 ? Math.max(0, wave) * FX.crowd : 0;
+    const a    = 0.15 + 0.55 * lit;
+    c.fillStyle = "rgba(" + (198 + 50*lit | 0) + "," + (212 + 36*lit | 0) + ",240," + a.toFixed(3) + ")";
+    c.beginPath(); c.arc(x, y, 3.1 + 2.8 * lit, 0, Math.PI * 2); c.fill();
+  }
+}
+
+function drawFX(){
+  const c = ctx;
+
+  // 1) pitch par ball ke bounce ke nishaan
+  FX.marks.forEach(m => {
+    const a = Math.max(0, 1 - m.t / 7000);
+    c.fillStyle = "rgba(222,196,142," + (a * 0.55).toFixed(3) + ")";
+    c.beginPath(); c.ellipse(m.x, m.y, 8, 3.4, 0, 0, Math.PI * 2); c.fill();
+  });
+
+  // 2) boundary par failta hua gola
+  FX.ripples.forEach(r => {
+    const p = r.t / r.dur, a = 1 - p;
+    c.strokeStyle = "rgba(" + r.r + "," + r.g + "," + r.b + "," + (a * 0.8).toFixed(3) + ")";
+    c.lineWidth = 3 + 6 * (1 - p);
+    c.beginPath(); c.arc(r.x, r.y, 12 + p * 135, 0, Math.PI * 2); c.stroke();
+  });
+
+  // 3) udte bail (wicket)
+  FX.bails.forEach(b => {
+    c.save();
+    c.translate(b.x, b.y); c.rotate(b.rot);
+    c.fillStyle = "#f8f3e4"; c.fillRect(-8, -2, 16, 4.5);
+    c.strokeStyle = "rgba(0,0,0,.35)"; c.lineWidth = 1; c.strokeRect(-8, -2, 16, 4.5);
+    c.restore();
+  });
+
+  // 4) "+4" / "+6" hawa mein
+  FX.popups.forEach(p => {
+    const q = p.t / p.dur;
+    const a = q < 0.12 ? q / 0.12 : Math.max(0, 1 - (q - 0.12) / 0.88);
+    const y = p.y - 78 * Math.pow(q, 0.55);
+    const sc = 1 + 0.35 * Math.min(1, q / 0.2) - 0.12 * q;
+    c.save();
+    c.globalAlpha = Math.max(0, a);
+    c.translate(p.x, y); c.scale(sc, sc);
+    c.font = "900 66px system-ui,-apple-system,Segoe UI,sans-serif";
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.lineWidth = 9; c.strokeStyle = "rgba(0,0,0,.78)";
+    c.strokeText(p.text, 0, 0);
+    c.fillStyle = p.color; c.fillText(p.text, 0, 0);
+    c.restore();
+  });
+
+  // 5) bat se ball ke takrane ki chamak
+  if (FX.flash > 0 && ball.visible){
+    const bx = ball.x, by = ball.y - ball.z;
+    c.save();
+    c.globalAlpha = Math.max(0, FX.flash) * 0.92;
+    const g = c.createRadialGradient(bx, by, 1, bx, by, 52);
+    g.addColorStop(0, "rgba(255,255,255,.98)");
+    g.addColorStop(0.45, "rgba(255,226,140,.55)");
+    g.addColorStop(1, "rgba(255,200,80,0)");
+    c.fillStyle = g;
+    c.beginPath(); c.arc(bx, by, 52, 0, Math.PI * 2); c.fill();
+    c.restore();
+  }
+}
+
 function drawBall(){
   if (!ball.visible) return;
   const c = ctx;
@@ -999,8 +1157,14 @@ function drawBall(){
   g.addColorStop(0,"#fff"); g.addColorStop(.55,"#f2f0ea"); g.addColorStop(1,"#b9b3a4");
   c.fillStyle = g;
   c.beginPath(); c.arc(ball.x, y, 7.5, 0, Math.PI*2); c.fill();
-  c.strokeStyle = "#c2372f"; c.lineWidth = 1.6;
-  c.beginPath(); c.arc(ball.x - 2, y, 7.5, -0.9, 0.9); c.stroke();
+  // ghoomti hui laal seam — ball ko zinda dikhati hai
+  c.save();
+  c.translate(ball.x, y); c.rotate(FX.spin);
+  c.strokeStyle = "#c2372f"; c.lineWidth = 1.7;
+  c.beginPath(); c.arc(-2, 0, 7.5, -0.95, 0.95); c.stroke();
+  c.strokeStyle = "rgba(195,55,47,.35)"; c.lineWidth = 1;
+  c.beginPath(); c.arc(2, 0, 7.5, -0.8, 0.8); c.stroke();
+  c.restore();
 }
 
 function drawFielders(){
