@@ -663,6 +663,14 @@ class BallDetector:
         if d_balls == 0 and d_score == 0 and d_wkts == 0:
             return None                                 # nothing happened yet
 
+        # Guard against Cricbuzz score corrections / missed polls. One legal
+        # delivery can never be worth more than 7 (6 + no-ball, or 5 + penalty)
+        # and an extra is capped at 5 (wide + 4 byes). Anything larger means we
+        # skipped deliveries — silently resync the scoreboard instead of
+        # announcing "12 runs" on air.
+        if (d_balls == 1 and d_score > 7) or (d_balls == 0 and d_score > 5) or d_wkts > 1:
+            return {"type": "catchup", "runs": d_score, "wickets": d_wkts}
+
         # Find the freshest commentary line we haven't used yet
         text = ""
         for line in c.get("commentary", [])[:8]:

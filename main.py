@@ -513,6 +513,14 @@ class App:
         elif ev and ev.get("type") in ("innings_break", "reset"):
             st.over_events = []
             await self.broadcast({"type": "status", "payload": st.status})
+        elif ev and ev.get("type") == "catchup":
+            # score resync (missed balls / site correction) — update silently,
+            # do NOT animate or speak a fake delivery
+            LOG.info("score resync: +%s runs, +%s wkts (no ball event)",
+                     ev.get("runs", 0), ev.get("wickets", 0))
+            st.over_events = []
+            st.over_events = []
+            await self.broadcast({"type": "status", "payload": st.status})
 
         st.overlay = overlay_state(snap, st, st.last_hi, st.last_en)
         await self.broadcast({"type": "state", "payload": st.overlay})
