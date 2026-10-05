@@ -1,0 +1,70 @@
+# ============================================================================
+#  LIVE CRICKET 2D ENGINE — configuration
+#  Every value here can be overridden with an environment variable of the
+#  same name in UPPER_SNAKE_CASE where it matters (PORT, GEMINI_API_KEY).
+# ============================================================================
+
+scraper:
+  # "auto"  -> automatically pick the first In-Progress match
+  # "174330"-> pin a specific Cricbuzz match id
+  # Find ids at  http://<your-host>/api/matches
+  match_id: "auto"
+
+  # Only consider matches whose series name contains this text (case-insensitive).
+  # e.g. "india", "ipl", "world cup". Leave "" for any match.
+  series_filter: ""
+
+  # Seconds between scrapes. 5 is polite and fast enough (balls are ~30s apart).
+  # Do not go below 3 — you will get rate-limited.
+  poll_seconds: 5
+
+audio:
+  enabled: true
+  # Free Microsoft neural Hindi voices from edge-tts:
+  #   hi-IN-MadhurNeural  (male, energetic — recommended)
+  #   hi-IN-SwaraNeural   (female)
+  voice: "hi-IN-MadhurNeural"
+  rate: "+12%"      # speaking speed
+  pitch: "+6Hz"     # slight lift = excitement
+  volume: "+0%"
+  timeout: 12       # seconds before we give up and stay silent
+
+commentary:
+  # false -> template engine (free, instant, always works)
+  # true  -> call an LLM for more natural Hindi (needs an API key)
+  enabled: false
+  mode: "template"      # template | llm
+  provider: "gemini"    # gemini | openai  (openai = any OpenAI-compatible endpoint)
+  model: "gemini-2.0-flash"
+  api_key_env: "GEMINI_API_KEY"
+  temperature: 0.85
+  timeout: 4            # if the LLM is slower than this we use the template
+
+# ---------------------------------------------------------------------------
+#  Your own branding. IMPORTANT: put YOUR channel name/handle here, not ours.
+#  Using your own name + no real team logos is the single biggest thing you can
+#  do to reduce copyright/trademark risk while still streaming live scores.
+# ---------------------------------------------------------------------------
+branding:
+  channel: "SPORTS GYAN"         # <-- aapka channel
+  handle:  "@sportsgyanin"       # <-- aapka YouTube handle
+  logo:    "SG"                  # 1-2 characters dikhne wale hain
+  accent:  "#1de9b6"             # overlay ka main rang
+  tagline: "AUTO 2D ENGINE"
+
+# ---------------------------------------------------------------------------
+#  Privacy / risk settings (safe_mode = tumne "thoda safe banao" chuna tha)
+# ---------------------------------------------------------------------------
+privacy:
+  # true  = header me poora team naam (e.g. "SOUTH AFRICA CHAMPIONS VS WEST INDIES CHAMPIONS")
+  # false = sirf short code ("SAC VS WIC") — real team names kam dikhte hain
+  use_full_team_names: false
+  # true  = koi bhi player photo / team logo kabhi load nahi hoga (recommended)
+  block_logos: true
+
+overlay:
+  viewer_base: 12000    # starting point for the simulated viewer counter
+
+server:
+  host: "0.0.0.0"
+  port: 8080            # Render/Koyeb inject $PORT, which always wins

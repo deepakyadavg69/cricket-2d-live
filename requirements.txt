@@ -1,0 +1,13 @@
+# ============================================================================
+#  LIVE CRICKET 2D ENGINE — backend dependencies
+#  Deploy target: Render / Koyeb / Railway free tier (or any always-on box)
+#  Python 3.10+
+# ============================================================================
+
+aiohttp>=3.9.5          # async HTTP client (scraper) + HTTP/WebSocket server
+edge-tts>=6.1.9         # free Microsoft Neural TTS (hi-IN-MadhurNeural)
+PyYAML>=6.0.1           # config.yaml
+aiofiles>=23.2.1        # async file writes for TTS cache
+
+# --- optional (only if you enable LLM commentary) ---------------------------
+# openai>=1.30.0        # set commentary.llm.provider = openai in config.yaml

@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: cricket-2d-live
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python main.py"
+    healthCheckPath: /api/health
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: BRAND_CHANNEL
+        value: "SPORTS GYAN"
+      - key: BRAND_HANDLE
+        value: "@sportsgyanin"
+      - key: BRAND_LOGO
+        value: "SG"
+      - key: MATCH_ID
+        value: "auto"

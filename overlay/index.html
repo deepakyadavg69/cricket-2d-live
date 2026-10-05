@@ -1,0 +1,1549 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Cricket 2D Engine — Broadcast Overlay</title>
+<!--
+  ============================================================================
+  LIVE CRICKET 2D ENGINE — BROADCAST OVERLAY  (single-file, offline-capable)
+  ============================================================================
+  Ye file OBS Studio / Prism Live Studio me "Browser Source" ke roop me load hoti hai.
+
+  TWO MODES:
+   1) LIVE MODE  -> agar page kisi host par serve ho raha ho, to WS se connect karega
+                    (ws://<host>/ws) aur Python backend (main.py) se events lega.
+   2) DEMO MODE  -> agar file:// se khola jaye ya WS connect na ho paye, to apne aap
+                    synthetic balls generate karega (test / rehearsal ke liye).
+
+  WEBSOCKET MESSAGE FORMAT (backend -> browser):
+    { "type": "state",    "payload": { ...full match state... } }
+    { "type": "ball",     "payload": { "runs":4, "extra":0, "wicket":false,
+                                       "shot":"SHOT_DRIVE", "event":"RUN_FOUR",
+                                       "text_en":"FOUR! ...", "text_hi":"चौका! ..." } }
+    { "type": "over_end", "payload": { "over":15, "runs":12,
+                                       "timeline":["1","4","0","6","W","2"],
+                                       "bowler":{...}, "bats":[{...},{...}] } }
+    { "type": "audio",    "payload": { "sfx":"six" } }
+
+  KEYS:  [S] sound on/off   [H] help / hide UI   [F] fullscreen
+  ============================================================================
+-->
+<style>
+:root{--accent:#1de9b6}
+/* ============================  RESET & SHELL  ============================ */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;
+  font-family:"Segoe UI",system-ui,-apple-system,"Noto Sans Devanagari","Mangal",sans-serif;
+  -webkit-font-smoothing:antialiased;color:#fff;cursor:default}
+
+#viewport{position:fixed;inset:0;background:
+  radial-gradient(ellipse at 50% 40%,#0b1622 0%,#04070c 70%,#000 100%)}
+
+#stage{position:absolute;left:50%;top:50%;width:1920px;height:1080px;
+  transform-origin:center center;overflow:hidden;background:#04070c;
+  box-shadow:0 0 120px rgba(0,0,0,.9)}
+
+/* ============================  TOP HEADER  =============================== */
+#hdr{position:absolute;left:0;top:0;width:1920px;height:96px;z-index:30;
+  display:flex;align-items:center;gap:22px;padding:0 28px;
+  background:linear-gradient(180deg,#0a1728 0%,#0d2038 55%,#10263f 100%);
+  border-bottom:3px solid var(--accent,#1de9b6)}
+
+.live-badge{display:flex;align-items:center;gap:10px;background:#e8112d;
+  padding:11px 20px;border-radius:8px;font-weight:900;font-size:26px;
+  letter-spacing:2px;box-shadow:0 4px 18px rgba(232,17,45,.55)}
+.live-dot{width:15px;height:15px;border-radius:50%;background:#fff;
+  animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.72)}}
+
+.match-title{font-size:32px;font-weight:800;letter-spacing:.4px;white-space:nowrap}
+.match-sub{font-size:18px;color:#8fb2cc;font-weight:600;margin-top:3px;letter-spacing:.4px}
+
+.hdr-stats{margin-left:auto;display:flex;align-items:center;gap:16px}
+.chip{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
+  border-radius:10px;padding:9px 16px;min-width:120px;text-align:center}
+.chip .k{font-size:13px;color:#8fb2cc;font-weight:700;letter-spacing:1.2px}
+.chip .v{font-size:27px;font-weight:900;line-height:1.15;margin-top:2px}
+.chip.need{background:linear-gradient(180deg,#b8530a,#8a3d05);border-color:#ff9d3d}
+.chip.need .v{color:#ffd9a8}
+
+.viewers{display:flex;align-items:center;gap:9px;background:rgba(0,0,0,.35);
+  border:1px solid rgba(255,255,255,.16);border-radius:10px;padding:10px 16px;
+  font-size:23px;font-weight:800;font-variant-numeric:tabular-nums}
+.viewers .eye{width:14px;height:14px;border-radius:50%;background:var(--accent,#1de9b6);
+  box-shadow:0 0 12px var(--accent,#1de9b6)}
+
+/* ============================  GROUND CANVAS  ============================ */
+#canvasWrap{position:absolute;left:0;top:96px;width:1920px;height:604px;z-index:10;
+  transition:filter .45s ease}
+#canvasWrap.blurred{filter:blur(11px) brightness(.55) saturate(.8)}
+#ground{display:block;width:1920px;height:604px}
+
+/* ============================  BIG FLASH  =============================== */
+#flash{position:absolute;left:0;top:96px;width:1920px;height:604px;z-index:22;
+  display:flex;align-items:center;justify-content:center;pointer-events:none;opacity:0}
+#flash.show{animation:flashIn 1.7s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes flashIn{
+  0%{opacity:0;transform:scale(.35) rotate(-9deg)}
+  16%{opacity:1;transform:scale(1.14) rotate(2deg)}
+  28%{transform:scale(1) rotate(0)}
+  76%{opacity:1;transform:scale(1)}
+  100%{opacity:0;transform:scale(1.1)}}
+#flash .txt{font-size:190px;font-weight:900;letter-spacing:8px;
+  text-shadow:0 0 40px rgba(0,0,0,.85),0 10px 0 rgba(0,0,0,.35);
+  -webkit-text-stroke:5px rgba(0,0,0,.55)}
+#flash .sub{font-size:44px;font-weight:800;letter-spacing:3px;margin-top:-10px;
+  text-align:center;color:#fff;text-shadow:0 4px 18px #000}
+
+/* ============================  OVER SUMMARY CARD  ======================== */
+#overCard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.85);
+  width:1080px;z-index:25;opacity:0;pointer-events:none;
+  transition:opacity .4s ease,transform .4s cubic-bezier(.2,1.2,.4,1)}
+#overCard.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#overCard .card{background:linear-gradient(160deg,rgba(12,28,48,.97),rgba(6,15,28,.97));
+  border:2px solid var(--accent,#1de9b6);border-radius:22px;padding:30px 36px;
+  box-shadow:0 40px 110px rgba(0,0,0,.85),inset 0 1px 0 rgba(255,255,255,.12)}
+.oc-head{display:flex;align-items:baseline;justify-content:space-between;
+  border-bottom:2px solid rgba(29,233,182,.35);padding-bottom:14px;margin-bottom:20px}
+.oc-title{font-size:38px;font-weight:900;letter-spacing:1px;color:var(--accent,#1de9b6)}
+.oc-runs{font-size:60px;font-weight:900;line-height:1}
+.oc-runs small{font-size:22px;color:#8fb2cc;font-weight:700;margin-left:8px}
+.oc-timeline{display:flex;gap:12px;margin:18px 0 24px}
+.tl{flex:1;height:74px;border-radius:12px;display:flex;align-items:center;
+  justify-content:center;font-size:36px;font-weight:900;
+  background:rgba(255,255,255,.08);border:2px solid rgba(255,255,255,.16)}
+.tl.b1{background:linear-gradient(180deg,#0f7a45,#0a5230);border-color:#25d07a}
+.tl.b4{background:linear-gradient(180deg,#d99a06,#9c6f03);border-color:#ffcc33}
+.tl.b6{background:linear-gradient(180deg,#7b2fd6,#4c1a8a);border-color:#c08bff}
+.tl.bW{background:linear-gradient(180deg,#d61f3c,#8b1026);border-color:#ff6b84}
+.oc-rows{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.oc-row{background:rgba(255,255,255,.06);border-radius:12px;padding:14px 18px;
+  display:flex;justify-content:space-between;align-items:center}
+.oc-row .nm{font-size:25px;font-weight:800}
+.oc-row .st{font-size:23px;font-weight:800;color:var(--accent,#1de9b6);font-variant-numeric:tabular-nums}
+.oc-row .lb{font-size:14px;color:#8fb2cc;font-weight:700;letter-spacing:1.4px}
+
+/* ============================  BOTTOM SCOREBAR  ========================== */
+#scorebar{position:absolute;left:0;top:700px;width:1920px;height:200px;z-index:30;
+  background:linear-gradient(180deg,#0d2038 0%,#0a1728 100%);
+  border-top:3px solid var(--accent,#1de9b6);display:flex;flex-direction:column}
+
+.sb-top{display:flex;align-items:center;height:116px;padding:0 26px;gap:22px}
+.team-chip{width:14px;height:78px;border-radius:4px;background:#0a4bd6;flex:0 0 auto}
+.score-block{display:flex;align-items:baseline;gap:14px}
+.team-name{font-size:44px;font-weight:900;letter-spacing:1px}
+.score-num{font-size:82px;font-weight:900;line-height:.9;font-variant-numeric:tabular-nums;
+  text-shadow:0 4px 22px rgba(29,233,182,.35)}
+.score-wk{font-size:44px;font-weight:800;color:#ff8a9c}
+.score-ov{font-size:36px;font-weight:800;color:#8fb2cc;font-variant-numeric:tabular-nums;
+  margin-left:6px}
+
+.sb-div{width:2px;height:82px;background:rgba(255,255,255,.14);flex:0 0 auto}
+
+.mini-col{display:flex;flex-direction:column;gap:4px;min-width:300px}
+.mini{display:flex;align-items:center;gap:10px;font-size:24px;font-weight:700}
+.mini .tag{font-size:12px;font-weight:900;letter-spacing:1.4px;padding:3px 8px;
+  border-radius:5px;background:rgba(255,255,255,.12);color:#a9c6dc}
+.mini .tag.on{background:var(--accent,#1de9b6);color:#04241c}
+.mini .tag.bowl{background:#ff9d3d;color:#3d1a00}
+.mini .val{font-variant-numeric:tabular-nums}
+.mini .val b{font-size:28px}
+
+.partner{display:flex;align-items:center;gap:10px;margin-left:auto;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);
+  border-radius:12px;padding:12px 20px}
+.partner .lb{font-size:13px;color:#8fb2cc;font-weight:800;letter-spacing:1.4px}
+.partner .val{font-size:26px;font-weight:900;color:#ffd166}
+
+.sb-bot{display:flex;align-items:center;height:84px;padding:0 26px;gap:18px;
+  background:rgba(0,0,0,.32);border-top:1px solid rgba(255,255,255,.09)}
+.balls-label{font-size:15px;font-weight:900;letter-spacing:1.6px;color:#8fb2cc;
+  min-width:190px}
+.ball{width:52px;height:52px;border-radius:50%;display:flex;align-items:center;
+  justify-content:center;font-size:26px;font-weight:900;flex:0 0 auto;
+  background:rgba(255,255,255,.09);border:2px solid rgba(255,255,255,.18);
+  animation:popIn .35s cubic-bezier(.2,1.5,.4,1)}
+@keyframes popIn{0%{transform:scale(0)}70%{transform:scale(1.22)}100%{transform:scale(1)}}
+.ball.b0{background:rgba(255,255,255,.07);color:#7d97ad}
+.ball.b1{background:linear-gradient(180deg,#0f7a45,#0a5230);border-color:#25d07a}
+.ball.b2{background:linear-gradient(180deg,#12885a,#0a5c3a);border-color:#2ee08a}
+.ball.b3{background:linear-gradient(180deg,#17986a,#0b6b45);border-color:#3ef0a0}
+.ball.b4{background:linear-gradient(180deg,#d99a06,#9c6f03);border-color:#ffcc33;color:#2b1c00}
+.ball.b6{background:linear-gradient(180deg,#7b2fd6,#4c1a8a);border-color:#c08bff}
+.ball.bW{background:linear-gradient(180deg,#d61f3c,#8b1026);border-color:#ff6b84}
+.ball.bwd,.ball.bnb,.ball.blb{background:linear-gradient(180deg,#b8530a,#7a3605);
+  border-color:#ff9d3d}
+.sb-bot .spacer{margin-left:auto}
+.brand-tag{font-size:17px;font-weight:800;letter-spacing:1.4px;color:#5f7d95}
+
+/* ============================  COMMENTARY TICKER  ======================== */
+#ticker{position:absolute;left:0;top:900px;width:1920px;height:90px;z-index:30;
+  background:linear-gradient(90deg,#071320,#0d263f 50%,#071320);
+  border-top:2px solid rgba(29,233,182,.4);
+  display:flex;align-items:center;gap:20px;padding:0 26px;overflow:hidden}
+#ticker .tbadge{background:var(--accent,#1de9b6);color:#04241c;font-size:14px;font-weight:900;
+  letter-spacing:1.6px;padding:7px 13px;border-radius:6px;flex:0 0 auto}
+#comm{font-size:29px;font-weight:700;line-height:1.35;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;flex:1}
+#comm .en{color:#8fb2cc;font-size:22px;font-weight:600}
+
+/* ============================  FOOTER / BRAND  =========================== */
+#brand{position:absolute;left:0;top:990px;width:1920px;height:90px;z-index:30;
+  background:#04080e;display:flex;align-items:center;padding:0 26px;gap:22px;
+  border-top:2px solid rgba(255,255,255,.08)}
+#brand .logo{width:44px;height:44px;border-radius:12px;flex:0 0 auto;
+  background:linear-gradient(135deg,var(--accent,#1de9b6),#0a4bd6);display:flex;align-items:center;
+  justify-content:center;font-weight:900;color:#04241c;font-size:22px}
+#brand .chan{font-size:26px;font-weight:900;letter-spacing:.6px}
+#brand .handle{font-size:20px;font-weight:700;color:var(--accent,#1de9b6)}
+#brand .right{margin-left:auto;display:flex;gap:14px;align-items:center}
+.pill{font-size:15px;font-weight:800;letter-spacing:1.2px;padding:8px 15px;
+  border-radius:20px;border:1px solid rgba(255,255,255,.2);color:#a9c6dc}
+.pill.hot{background:#e8112d;border-color:#ff6b84;color:#fff}
+
+/* ============================  STATUS / HELP  ============================ */
+#status{position:absolute;right:22px;top:112px;z-index:40;display:flex;
+  align-items:center;gap:9px;background:rgba(0,0,0,.55);
+  border:1px solid rgba(255,255,255,.18);border-radius:8px;padding:7px 13px;
+  font-size:15px;font-weight:800;letter-spacing:1.1px;color:#9fc0d8}
+#status .dot{width:10px;height:10px;border-radius:50%;background:#ffb020;
+  box-shadow:0 0 10px #ffb020}
+#status.liveC .dot{background:var(--accent,#1de9b6);box-shadow:0 0 10px var(--accent,#1de9b6)}
+#status.liveC{color:var(--accent,#1de9b6)}
+
+#help{position:absolute;left:22px;top:112px;z-index:40;background:rgba(0,0,0,.62);
+  border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:14px 18px;
+  font-size:16px;font-weight:700;color:#bcd6e8;line-height:1.7;transition:opacity .3s}
+#help b{color:var(--accent,#1de9b6)}
+#help.hide{opacity:0;pointer-events:none}
+
+/* ============================  AUDIO UNLOCK GATE  ======================== */
+/* Android Chrome blocks WebAudio until a real user gesture, so we show a
+   "TAP TO GO LIVE" gate. Add ?auto=1 to the URL to skip it (OBS / desktop). */
+#gate{position:absolute;left:0;top:0;width:1920px;height:1080px;z-index:100;
+  background:radial-gradient(ellipse at 50% 45%,rgba(9,22,38,.94),rgba(2,5,10,.97));
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:22px;cursor:pointer}
+#gate.hide{opacity:0;pointer-events:none;transition:opacity .55s ease}
+#gate .gt{font-size:78px;font-weight:900;letter-spacing:3px;color:var(--accent,#1de9b6);
+  text-shadow:0 0 60px rgba(29,233,182,.45)}
+#gate .gs{font-size:32px;color:#9fc0d8;font-weight:700}
+#gate .gb{margin-top:22px;background:var(--accent,#1de9b6);color:#04241c;padding:22px 56px;
+  border-radius:16px;font-size:38px;font-weight:900;letter-spacing:1.5px;
+  animation:pulseBtn 1.7s infinite}
+@keyframes pulseBtn{0%,100%{transform:scale(1)}50%{transform:scale(1.055)}}
+#gate .gn{position:absolute;bottom:44px;font-size:20px;color:#5f7d95;
+  font-weight:700;letter-spacing:1.2px;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+<div id="viewport">
+<div id="stage">
+
+  <!-- ===== GROUND CANVAS ===== -->
+  <div id="canvasWrap"><canvas id="ground" width="1920" height="604"></canvas></div>
+
+  <!-- ===== TOP HEADER ===== -->
+  <header id="hdr">
+    <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+    <div>
+      <div class="match-title" id="mTitle">INDIA vs AUSTRALIA</div>
+      <div class="match-sub" id="mSub">T20 · Narendra Modi Stadium, Ahmedabad · 2nd Innings</div>
+    </div>
+    <div class="hdr-stats">
+      <div class="chip"><div class="k">TARGET</div><div class="v" id="hTarget">195</div></div>
+      <div class="chip"><div class="k">CRR</div><div class="v" id="hCrr">9.06</div></div>
+      <div class="chip need"><div class="k">REQ RATE</div><div class="v" id="hRrr">14.14</div></div>
+      <div class="chip need"><div class="k">NEED</div><div class="v" id="hNeed">47 off 22</div></div>
+      <div class="viewers"><span class="eye"></span><span id="hViewers">12,480</span></div>
+    </div>
+  </header>
+
+  <!-- ===== BIG FLASH (SIX / FOUR / OUT) ===== -->
+  <div id="flash"><div style="text-align:center">
+      <div class="txt" id="flashTxt">SIX!</div><div class="sub" id="flashSub"></div>
+  </div></div>
+
+  <!-- ===== OVER SUMMARY CARD ===== -->
+  <div id="overCard">
+    <div class="card">
+      <div class="oc-head">
+        <div class="oc-title" id="ocTitle">OVER 15 — SUMMARY</div>
+        <div class="oc-runs"><span id="ocRuns">12</span><small>RUNS</small></div>
+      </div>
+      <div class="oc-timeline" id="ocTimeline"></div>
+      <div class="oc-rows">
+        <div class="oc-row"><div><div class="lb">BOWLER</div><div class="nm" id="ocBowler">M STARC</div></div>
+          <div class="st" id="ocBowlerFig">3.2-0-31-1</div></div>
+        <div class="oc-row"><div><div class="lb">STRIKER</div><div class="nm" id="ocBat1">V KOHLI</div></div>
+          <div class="st" id="ocBat1Fig">62 (38)</div></div>
+        <div class="oc-row"><div><div class="lb">PARTNERSHIP</div><div class="nm" id="ocPart">95 runs</div></div>
+          <div class="st" id="ocPartFig">38 balls</div></div>
+        <div class="oc-row"><div><div class="lb">NON-STRIKER</div><div class="nm" id="ocBat2">KL RAHUL</div></div>
+          <div class="st" id="ocBat2Fig">33 (24)</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BOTTOM SCOREBAR ===== -->
+  <div id="scorebar">
+    <div class="sb-top">
+      <div class="team-chip" id="teamChip"></div>
+      <div class="score-block">
+        <div class="team-name" id="sTeam">IND</div>
+        <div class="score-num" id="sScore">148</div>
+        <div class="score-wk" id="sWkts">-4</div>
+        <div class="score-ov" id="sOvers">(16.2)</div>
+      </div>
+      <div class="sb-div"></div>
+      <div class="mini-col">
+        <div class="mini"><span class="tag on">BAT</span>
+          <span class="val" id="sBat1">V KOHLI <b>62</b>(38)</span></div>
+        <div class="mini"><span class="tag">BAT</span>
+          <span class="val" id="sBat2">KL RAHUL <b>33</b>(24)</span></div>
+      </div>
+      <div class="sb-div"></div>
+      <div class="mini-col" style="min-width:320px">
+        <div class="mini"><span class="tag bowl">BOWL</span>
+          <span class="val" id="sBowl">M STARC <b>3.2-0-31-1</b></span></div>
+        <div class="mini"><span class="tag">ECO</span>
+          <span class="val" id="sEcon">Economy <b>9.30</b> · This over <b>9</b></span></div>
+      </div>
+      <div class="partner">
+        <div><div class="lb">LAST 10 OVS</div><div class="val" id="sLast10">78/2</div></div>
+      </div>
+    </div>
+    <div class="sb-bot">
+      <div class="balls-label">THIS OVER</div>
+      <div id="thisOver" style="display:flex;gap:10px"></div>
+      <div class="sb-div" style="height:52px"></div>
+      <div class="balls-label">LAST OVER</div>
+      <div id="lastOver" style="display:flex;gap:10px"></div>
+      <div class="spacer"></div>
+      <div class="brand-tag">CRS · AUTO 2D ENGINE</div>
+    </div>
+  </div>
+
+  <!-- ===== COMMENTARY TICKER ===== -->
+  <div id="ticker">
+    <div class="tbadge">COMMENTARY</div>
+    <div id="comm">मैच शुरू होने वाला है… इंतज़ार कीजिए!</div>
+  </div>
+
+  <!-- ===== FOOTER BRAND ===== -->
+  <div id="brand">
+    <div class="logo">C</div>
+    <div class="chan">CRICKET 2D LIVE</div>
+    <div class="handle">@cricket2dlive</div>
+    <div class="right">
+      <div class="pill" id="pMode">DEMO MODE</div>
+      <div class="pill" id="pSound">SOUND OFF</div>
+      <div class="pill hot">SUBSCRIBE</div>
+    </div>
+  </div>
+
+  <!-- ===== STATUS / HELP ===== -->
+  <div id="status"><span class="dot"></span><span id="statusTxt">DEMO</span></div>
+  <div id="help">
+    <b>LIVE CRICKET 2D ENGINE</b> — self-contained overlay<br>
+    <b>S</b> sound on/off &nbsp;·&nbsp; <b>H</b> hide help &nbsp;·&nbsp; <b>F</b> fullscreen<br>
+    Live mode: serve via <b>main.py</b> (ws://host/ws)
+  </div>
+
+  <!-- ===== AUDIO UNLOCK GATE (tap required on Android) ===== -->
+  <div id="gate">
+    <div class="gt">LIVE CRICKET 2D</div>
+    <div class="gs">ऑडियो चालू करने के लिए स्क्रीन पर टैप करें</div>
+    <div class="gb">▶ TAP TO GO LIVE</div>
+    <div class="gn">Android Chrome blocks sound until you tap once.<br>
+      Desktop/OBS: add <b>?auto=1</b> to the URL to skip this screen.</div>
+  </div>
+
+</div>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   1. STATE
+   ========================================================================== */
+const S = {
+  match : { title:"INDIA vs AUSTRALIA", format:"T20", venue:"Narendra Modi Stadium, Ahmedabad",
+            innings:"2nd Innings", chase:true },
+  batting : { code:"IND", color:"#0a4bd6", score:148, wkts:4, balls:98, maxOvers:20 },
+  bowling : { code:"AUS", color:"#0a8f4b" },
+  target : 195,
+  striker    : { name:"V KOHLI",  num:18, runs:62, balls:38, fours:5, sixes:3 },
+  nonStriker : { name:"KL RAHUL", num:1,  runs:33, balls:24, fours:2, sixes:1 },
+  bowler     : { name:"M STARC",  ov:3, balls:20, md:0, runs:31, wkts:1 },
+  thisOver : ["1","4","0"],
+  lastOver : ["1","4","0","6","W","2"],
+  last10   : "78/2",
+  partnership : 95,
+  partBalls   : 38,
+  viewers : 12480,
+  commentary_hi : "मैच शुरू होने वाला है… इंतज़ार कीजिए!",
+  commentary_en : ""
+};
+
+/* ==========================================================================
+   2. FIELD / PITCH GEOMETRY  (canvas 1920 x 604)
+   ========================================================================== */
+const G = {
+  w:1920, h:604,
+  cx:960, cy:300,
+  rx:930, ry:288,            // boundary ellipse
+  pitchX:880, pitchW:160,    // pitch rectangle
+  pitchTop:44, pitchBot:470,
+  creaseTop:104, creaseBot:428,
+  strikerEnd:452, bowlerEnd:84
+};
+
+const striker    = { x:838, y:432, num:18, name:"KOHLI",  flip:false };
+const nonStriker = { x:924, y:120, num:1,  name:"RAHUL",  flip:true  };
+const bowler     = { x:960, y:66,  num:56, name:"STARC",  flip:false };
+const umpire     = { x:1010, y:56, num:"", name:"",       flip:false };
+const keeper     = { x:960, y:498, num:7,  name:"CAREY",  flip:false };
+
+const FIELDERS = [
+  { id:"SLIP",     x:1064, y:250, num:49, name:"SLIP" },
+  { id:"POINT",    x:1240, y:352, num:30, name:"POINT" },
+  { id:"COVER",    x:1280, y:262, num:8,  name:"COVER" },
+  { id:"MID-OFF",  x:1046, y:74,  num:31, name:"M-OFF" },
+  { id:"MID-ON",   x:856,  y:74,  num:19, name:"M-ON" },
+  { id:"LONG-ON",  x:452,  y:92,  num:5,  name:"L-ON" },
+  { id:"LONG-OFF", x:1470, y:96,  num:17, name:"L-OFF" },
+  { id:"FINE-LEG", x:552,  y:512, num:88, name:"F-LEG" },
+  { id:"THIRD-MAN",x:1392, y:520, num:4,  name:"3RD" },
+  { id:"DEEP-MID", x:300,  y:330, num:12, name:"D-MID" }
+];
+FIELDERS.forEach(f => { f.hx = f.x; f.hy = f.y; f.react = 0; });
+
+/* Shot -> boundary target points */
+const SHOT_TARGET = {
+  SHOT_PULL   : [{x:352,y:300},{x:392,y:376}],
+  SHOT_HOOK   : [{x:520,y:556},{x:430,y:520}],
+  SHOT_DRIVE  : [{x:1300,y:232},{x:1216,y:150}],
+  SHOT_STRAIGHT:[{x:960,y:26},{x:1046,y:30}],
+  SHOT_CUT    : [{x:1500,y:430},{x:1360,y:566}],
+  SHOT_SIX    : [{x:420,y:86},{x:1520,y:84},{x:960,y:22},{x:250,y:250}],
+  SHOT_FLICK  : [{x:330,y:200},{x:300,y:318}],
+  SHOT_DEFENSE: null
+};
+
+/* ==========================================================================
+   3. CANVAS SETUP
+   ========================================================================== */
+const cv  = document.getElementById("ground");
+const ctx = cv.getContext("2d");
+function fitCanvas(){
+  // MOBILE/TABLET SAFETY: phones & tablets have huge devicePixelRatio (2–3.5).
+  // Rendering a 1920x604 canvas at dpr 3 = 5760x1812 buffer -> frame drops.
+  // Cap it: 1.0 on touch devices, 2 on desktop.
+  const isTouch = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)
+                  || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+  const cap = isTouch ? 1 : 2;
+  const dpr = Math.min(window.devicePixelRatio || 1, cap);
+  cv.width  = Math.round(G.w * dpr);
+  cv.height = Math.round(G.h * dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.imageSmoothingEnabled = true;
+}
+fitCanvas();
+
+function fitStage(){
+  const s = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  document.getElementById("stage").style.transform =
+    "translate(-50%,-50%) scale(" + s + ")";
+}
+fitStage();
+window.addEventListener("resize", () => { fitStage(); fitCanvas(); });
+
+/* ==========================================================================
+   4. DRAWING PRIMITIVES
+   ========================================================================== */
+function rr(c,x,y,w,h,r){
+  c.beginPath();
+  c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
+  c.lineTo(x+w,y+h-r); c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  c.lineTo(x+r,y+h); c.quadraticCurveTo(x,y+h,x,y+h-r);
+  c.lineTo(x,y+r); c.quadraticCurveTo(x,y,x+r,y);
+  c.closePath();
+}
+
+/* Cartoon player ---------------------------------------------------------- */
+function drawPlayer(c, p, o){
+  o = o || {};
+  const col   = o.color || "#0a4bd6";
+  const scale = o.scale || 1;
+  const bat   = o.bat || false;
+  const bowlA = o.bowlArm || 0;   // -1 .. 1 (bowling arm swing)
+  const legs  = o.legs || 0;      // running leg phase
+  const sk    = o.skin || "#f0c39a";
+
+  c.save();
+  c.translate(p.x, p.y);
+  c.scale(scale, scale);
+
+  // shadow
+  c.fillStyle = "rgba(0,0,0,.34)";
+  c.beginPath(); c.ellipse(0, 4, 20, 7, 0, 0, Math.PI*2); c.fill();
+
+  // legs
+  c.strokeStyle = "#1b2740"; c.lineWidth = 6; c.lineCap = "round";
+  const sw = Math.sin(legs) * 9;
+  c.beginPath(); c.moveTo(-5, -14); c.lineTo(-7 + sw, 2); c.stroke();
+  c.beginPath(); c.moveTo( 5, -14); c.lineTo( 7 - sw, 2); c.stroke();
+
+  // body (jersey)
+  const g = c.createLinearGradient(0,-52,0,-12);
+  g.addColorStop(0, col); g.addColorStop(1, shade(col,-34));
+  c.fillStyle = g;
+  rr(c, -13, -50, 26, 38, 8); c.fill();
+  c.strokeStyle = "rgba(0,0,0,.35)"; c.lineWidth = 1.5; c.stroke();
+
+  // jersey number
+  if (p.num !== "" && p.num != null){
+    c.fillStyle = "#fff"; c.font = "900 16px system-ui,sans-serif";
+    c.textAlign = "center"; c.textBaseline = "middle";
+    c.fillText(String(p.num), 0, -30);
+  }
+
+  // arms
+  c.strokeStyle = sk; c.lineWidth = 5.5;
+  if (bat){
+    // bat in hands, angled
+    c.save(); c.translate(12, -42); c.rotate(o.batAng != null ? o.batAng : 0.35);
+    c.fillStyle = "#c8913f";
+    rr(c, -4, -40, 8, 46, 4); c.fill();
+    c.fillStyle = "#8b5a1e"; rr(c, -5, -46, 10, 9, 3); c.fill();
+    c.restore();
+    c.beginPath(); c.moveTo(-11,-44); c.lineTo(10,-40); c.stroke();
+    c.beginPath(); c.moveTo(-11,-44); c.lineTo(6,-46); c.stroke();
+  } else if (bowlA !== 0){
+    c.save(); c.translate(0,-44); c.rotate(bowlA * 1.15);
+    c.beginPath(); c.moveTo(0,0); c.lineTo(4, 26); c.stroke();
+    c.restore();
+    c.beginPath(); c.moveTo(-10,-44); c.lineTo(-16,-22); c.stroke();
+  } else {
+    c.beginPath(); c.moveTo(-11,-44); c.lineTo(-17,-24); c.stroke();
+    c.beginPath(); c.moveTo( 11,-44); c.lineTo( 17,-24); c.stroke();
+  }
+
+  // head
+  c.fillStyle = sk;
+  c.beginPath(); c.arc(0, -60, 11, 0, Math.PI*2); c.fill();
+  // hair / helmet
+  c.fillStyle = o.helmet ? "#12203a" : "#2b1d12";
+  c.beginPath(); c.arc(0, -60, 11, Math.PI*1.05, Math.PI*2.0); c.fill();
+  if (o.helmet){
+    c.fillStyle = "#e9eef5";
+    c.beginPath(); c.arc(2, -57, 3.2, 0, Math.PI*2); c.fill();
+  }
+  c.restore();
+
+  // name plate
+  if (p.name){
+    c.save();
+    c.font = "800 13px system-ui,sans-serif"; c.textAlign = "center";
+    const w = c.measureText(p.name).width + 14;
+    c.fillStyle = "rgba(4,10,18,.78)";
+    rr(c, p.x - w/2, p.y + 8, w, 20, 6); c.fill();
+    c.fillStyle = o.nameCol || "#dbe9f5";
+    c.textBaseline = "middle";
+    c.fillText(p.name, p.x, p.y + 19);
+    c.restore();
+  }
+}
+
+function shade(hex, amt){
+  const n = parseInt(hex.slice(1),16);
+  const r = Math.max(0,Math.min(255,(n>>16)+amt));
+  const g = Math.max(0,Math.min(255,((n>>8)&255)+amt));
+  const b = Math.max(0,Math.min(255,(n&255)+amt));
+  return "rgb("+r+","+g+","+b+")";
+}
+
+/* Ground ------------------------------------------------------------------ */
+function drawGround(){
+  const c = ctx;
+  c.clearRect(0,0,G.w,G.h);
+
+  // outfield base
+  c.fillStyle = "#0d1a12"; c.fillRect(0,0,G.w,G.h);
+
+  // boundary ellipse with gradient
+  c.save();
+  c.beginPath(); c.ellipse(G.cx,G.cy,G.rx,G.ry,0,0,Math.PI*2);
+  const gg = c.createRadialGradient(G.cx,G.cy-40,40,G.cx,G.cy,G.rx);
+  gg.addColorStop(0,"#3f8f4a"); gg.addColorStop(.55,"#2f7a3d"); gg.addColorStop(1,"#1d5a2c");
+  c.fillStyle = gg; c.fill();
+  c.restore();
+
+  // mow rings
+  c.save();
+  c.beginPath(); c.ellipse(G.cx,G.cy,G.rx,G.ry,0,0,Math.PI*2); c.clip();
+  for (let i=1;i<=4;i++){
+    c.fillStyle = (i%2===0) ? "rgba(255,255,255,.045)" : "rgba(0,0,0,.05)";
+    c.beginPath();
+    c.ellipse(G.cx,G.cy,(G.rx/4.4)*i,(G.ry/4.4)*i,0,0,Math.PI*2);
+    c.fill();
+  }
+  c.restore();
+
+  // 30-yard circle
+  c.strokeStyle = "rgba(255,255,255,.55)"; c.lineWidth = 3; c.setLineDash([12,10]);
+  c.beginPath(); c.ellipse(G.cx,G.cy,392,168,0,0,Math.PI*2); c.stroke();
+  c.setLineDash([]);
+
+  // pitch
+  c.fillStyle = "#c9ae74";
+  c.fillRect(G.pitchX, G.pitchTop, G.pitchW, G.pitchBot - G.pitchTop);
+  c.strokeStyle = "rgba(0,0,0,.22)"; c.lineWidth = 2;
+  c.strokeRect(G.pitchX, G.pitchTop, G.pitchW, G.pitchBot - G.pitchTop);
+  // mow stripes on pitch
+  for (let i=0;i<6;i++){
+    c.fillStyle = i%2 ? "rgba(255,255,255,.06)" : "rgba(0,0,0,.045)";
+    c.fillRect(G.pitchX, G.pitchTop + i*((G.pitchBot-G.pitchTop)/6),
+               G.pitchW, (G.pitchBot-G.pitchTop)/6);
+  }
+  // creases
+  c.strokeStyle = "#fff"; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(G.pitchX-16,G.creaseBot); c.lineTo(G.pitchX+G.pitchW+16,G.creaseBot); c.stroke();
+  c.beginPath(); c.moveTo(G.pitchX-16,G.creaseTop); c.lineTo(G.pitchX+G.pitchW+16,G.creaseTop); c.stroke();
+  c.strokeStyle = "rgba(255,255,255,.5)"; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(G.pitchX-10,G.creaseBot+14); c.lineTo(G.pitchX+G.pitchW+10,G.creaseBot+14); c.stroke();
+  c.beginPath(); c.moveTo(G.pitchX-10,G.creaseTop-14); c.lineTo(G.pitchX+G.pitchW+10,G.creaseTop-14); c.stroke();
+
+  // stumps both ends
+  drawStumps(G.cx, G.creaseBot);
+  drawStumps(G.cx, G.creaseTop);
+
+  // boundary rope
+  c.strokeStyle = "#f2f5f8"; c.lineWidth = 5;
+  c.beginPath(); c.ellipse(G.cx,G.cy,G.rx,G.ry,0,0,Math.PI*2); c.stroke();
+  c.strokeStyle = "rgba(0,0,0,.18)"; c.lineWidth = 2;
+  c.beginPath(); c.ellipse(G.cx,G.cy,G.rx-7,G.ry-7,0,0,Math.PI*2); c.stroke();
+
+  // advertising boards (simple dashes around rope)
+  c.save();
+  c.strokeStyle = "rgba(10,25,45,.55)"; c.lineWidth = 12;
+  c.setLineDash([64,40]);
+  c.beginPath(); c.ellipse(G.cx,G.cy,G.rx+16,G.ry+16,0,0,Math.PI*2); c.stroke();
+  c.setLineDash([]);
+  c.restore();
+}
+
+function drawStumps(x,y){
+  const c = ctx;
+  c.fillStyle = "#f6f1e2";
+  for (let i=-1;i<=1;i++){
+    c.fillRect(x + i*11 - 2.5, y-34, 5, 36);
+  }
+  c.fillStyle = "#e6dfc9";
+  c.fillRect(x-15, y-38, 11, 4);
+  c.fillRect(x+4,  y-38, 11, 4);
+  c.strokeStyle = "rgba(0,0,0,.35)"; c.lineWidth = 1;
+  for (let i=-1;i<=1;i++) c.strokeRect(x + i*11 - 2.5, y-34, 5, 36);
+}
+
+/* ==========================================================================
+   5. BALL + ANIMATION ENGINE
+   ========================================================================== */
+const ball = { x:0, y:0, z:0, visible:false, trail:[] };
+
+const anim = {
+  phase:"idle",              // idle | runup | flight | shot | running | done
+  t:0, dur:0,
+  from:null, to:null, arc:0,
+  runs:0, wicket:false, shot:null, event:null,
+  battersSwapped:false,
+  chaseFielder:null,
+  showBatSwing:0
+};
+
+/* --- Demo / event helpers --- */
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+const DEMO_COMMENTARY = {
+  RUN_SIX: [
+    ["SIX!! कोहली ने छक्का जड़ दिया! गेंद स्टैंड्स में गायब!","SIX!! Kohli launches it into the stands!"],
+    ["छह रन! शॉट खूबसूरत, लॉन्ग-ऑन के ऊपर से!","SIX! Sails over long-on!"]],
+  RUN_FOUR: [
+    ["चौका! कवर्स के बीच से शानदार ड्राइव, चार रन!","FOUR! Exquisite cover drive, beats the fielder."],
+    ["चार रन! गैप मिल गया और गेंद बाउंड्री पर!","FOUR! Found the gap perfectly."]],
+  RUN_ONE: [
+    ["एक रन, लॉन्ग-ऑन की तरफ खेलकर सिंगल लिया।","One run taken, dabbed to long-on."],
+    ["सिंगल! जल्दी भागे और क्रीज में पहुँच गए।","Quick single, comfortably home."]],
+  RUN_TWO: [
+    ["दो रन! बीच-बीच में शानदार रनिंग, डबल पूरा!","TWO! Excellent running between the wickets."],
+    ["डबल! डीप मिड-विकेट की दिशा में खेला और 2 रन।","Two more, deep mid-wicket region."]],
+  DOT: [
+    ["कोई रन नहीं, शानदार डिफेंसिव शॉट।","No run, solidly defended."],
+    ["डॉट बॉल! गेंदबाज़ ने दबाव बनाया।","Dot ball! Pressure building."]],
+  WICKET: [
+    ["आउट!! कैच आउट! बल्लेबाज़ को जाना पड़ा, बड़ा विकेट!","OUT!! Caught! Big breakthrough for the bowler!"],
+    ["आउट!! स्टंप्स उड़ गए, बोल्ड! खत्म हो गए!","OUT!! Bowled! Timber!"]]
+};
+
+function eventFromRuns(r, wicket){
+  if (wicket) return "WICKET";
+  if (r === 6) return "RUN_SIX";
+  if (r === 4) return "RUN_FOUR";
+  if (r === 0) return "DOT";
+  if (r === 1) return "RUN_ONE";
+  return "RUN_TWO";
+}
+
+function shotForEvent(ev){
+  if (ev === "RUN_SIX")   return pick(["SHOT_SIX","SHOT_SIX","SHOT_DRIVE"]);
+  if (ev === "RUN_FOUR")  return pick(["SHOT_DRIVE","SHOT_CUT","SHOT_PULL","SHOT_FLICK","SHOT_STRAIGHT"]);
+  if (ev === "DOT")       return "SHOT_DEFENSE";
+  return pick(["SHOT_DRIVE","SHOT_FLICK","SHOT_PULL","SHOT_CUT"]);
+}
+
+/* --- Main entry: play one delivery --- */
+function playBall(payload){
+  payload = payload || {};
+  const runs   = payload.runs != null ? payload.runs : 0;
+  const extra  = payload.extra || 0;
+  const wicket = !!payload.wicket;
+  const ev     = payload.event || eventFromRuns(runs, wicket);
+  const shot   = payload.shot  || shotForEvent(ev);
+
+  anim.runs = runs + extra;
+  anim.wicket = wicket;
+  anim.event = ev;
+  anim.shot = shot;
+  anim.phase = "runup";
+  anim.t = 0; anim.dur = 620;
+  anim.battersSwapped = false;
+  ball.trail = [];
+  ball.visible = true;
+
+  // bowler release -> batsman
+  anim.from = { x: bowler.x + 6, y: bowler.y + 20 };
+  anim.to   = { x: striker.x + 20, y: striker.y - 22 };
+  anim.arc  = 26;
+
+  // where does the ball go after the bat?
+  const tg = SHOT_TARGET[shot];
+  anim.chaseFielder = null;
+  if (wicket){
+    anim.to2   = { x: G.cx + pick([-40,40]), y: G.creaseBot - 6 };
+    anim.arc2  = 6;
+  } else if (tg && (runs === 4 || runs === 6)){
+    const p = pick(tg);
+    anim.to2 = { x:p.x, y:p.y };
+    anim.arc2 = (runs === 6) ? 200 : 40;
+  } else if (tg){
+    const p = pick(tg);
+    anim.to2 = { x: striker.x + (p.x - striker.x) * pick([0.45,0.6,0.72]),
+                 y: striker.y + (p.y - striker.y) * pick([0.45,0.6,0.72]) };
+    anim.arc2 = 18;
+    // nearest fielder chases
+    let best = null, bd = 1e9;
+    FIELDERS.forEach(f => {
+      const d = (f.x-anim.to2.x)**2 + (f.y-anim.to2.y)**2;
+      if (d < bd){ bd = d; best = f; }
+    });
+    anim.chaseFielder = best;
+  } else {
+    anim.to2 = { x: striker.x + pick([-70,70]), y: striker.y + pick([14,30]) };
+    anim.arc2 = 8;
+  }
+
+  // apply scoreboard changes
+  applyBallToScore(runs, extra, wicket, ev);
+
+  // flash + audio + commentary
+  if (ev === "RUN_SIX")   showFlash("SIX!",  "#c08bff", "छक्का! " + runs + " रन");
+  if (ev === "RUN_FOUR")  showFlash("FOUR!", "#ffcc33", "चौका! " + runs + " रन");
+  if (wicket)             showFlash("OUT!",  "#ff6b84", "विकेट!");
+  sfx(ev);
+  setCommentary(payload.text_hi, payload.text_en);
+  duck(1400);
+}
+
+function applyBallToScore(runs, extra, wicket, ev){
+  const b = S.batting;
+  b.score += runs + extra;
+  const legal = extra === 0 || extra === undefined;
+  if (legal) b.balls += 1;
+  S.bowler.balls += (legal ? 1 : 0);
+  S.bowler.runs  += (runs + (extra === 0 ? 0 : extra));
+  if (wicket){ b.wkts += 1; S.bowler.wkts += 1; }
+
+  const st = S.striker;
+  if (!wicket){
+    st.runs += runs;
+    if (legal) st.balls += 1;
+    if (runs === 4) st.fours += 1;
+    if (runs === 6) st.sixes += 1;
+  }
+  S.partnership += runs;
+  if (legal) S.partBalls += 1;
+
+  // timeline badge
+  let badge = String(runs + extra);
+  if (wicket) badge = "W";
+  else if (extra) badge = "wd";
+  S.thisOver.push(badge);
+  S.last6 = S.thisOver.slice(-6);
+
+  // strike rotation
+  if (legal){
+    const odd = (runs + extra) % 2 === 1;
+    if (odd) swapBatters();
+    if (S.thisOver.length >= 6) endOver();
+  }
+  renderAll();
+}
+
+function swapBatters(){
+  const t = S.striker; S.striker = S.nonStriker; S.nonStriker = t;
+  const a = { name:striker.name, num:striker.num };
+  striker.name = nonStriker.name; striker.num = nonStriker.num;
+  nonStriker.name = a.name;       nonStriker.num = a.num;
+}
+
+/* --- Over end --- */
+function endOver(){
+  const timeline = S.thisOver.slice(0,6);
+  const runsThis = timeline.reduce((a,x) => a + (x === "W" ? 0 : (isNaN(+x) ? 1 : +x)), 0);
+  S.lastOver = timeline;
+  S.thisOver = [];
+  S.last6 = S.lastOver;
+  showOverCard({
+    over: Math.floor(S.batting.balls / 6),
+    runs: runsThis,
+    timeline: timeline
+  });
+  // rotate strike at end of over
+  swapBatters();
+  if (typeof playOverSummary === "function") playOverSummary(runsThis, timeline);
+}
+
+/* ==========================================================================
+   6. ANIMATION LOOP
+   ========================================================================== */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(48, now - last); last = now;
+
+  updateAnim(dt);
+  updateFielders(dt);
+
+  drawGround();
+  drawFielders();
+  drawBowler();
+  drawBatsmen();
+  drawUmpireKeeper();
+  drawBall();
+
+  requestAnimationFrame(loop);
+}
+
+function easeOut(t){ return 1 - Math.pow(1 - t, 3); }
+
+function updateAnim(dt){
+  if (anim.phase === "idle"){ ball.visible = false; return; }
+  anim.t += dt;
+  let p = Math.min(1, anim.t / anim.dur);
+
+  if (anim.phase === "runup"){
+    // bowler runs in, releases at 65%
+    bowler.x = 960 - 40 * (1 - easeOut(Math.min(1,p/0.65)));
+    if (p < 0.65){ ball.visible = false; return; }
+    ball.visible = true;
+    const q = (p - 0.65) / 0.35;
+    ball.x = anim.from.x + (anim.to.x - anim.from.x) * q;
+    ball.y = anim.from.y + (anim.to.y - anim.from.y) * q;
+    ball.z = Math.sin(Math.PI * q) * 14;
+    pushTrail();
+    if (p >= 1){
+      anim.phase = "flight"; anim.t = 0; anim.dur = 420;
+      anim.showBatSwing = 1;
+    }
+    return;
+  }
+
+  if (anim.phase === "flight"){
+    // ball reaches the bat
+    const q = easeOut(p);
+    ball.x = anim.to.x; ball.y = anim.to.y; ball.z = 14 * (1-p);
+    anim.showBatSwing = 1 - p;
+    pushTrail();
+    if (p >= 1){
+      anim.phase = "shot"; anim.t = 0;
+      anim.dur = (anim.runs >= 4) ? 900 : 620;
+      anim.from = { x: striker.x + 20, y: striker.y - 22 };
+      if (anim.chaseFielder) anim.chaseFielder.react = 1;
+      // all fielders react slightly
+      FIELDERS.forEach(f => { if (f !== anim.chaseFielder) f.react = Math.max(f.react, .35); });
+    }
+    return;
+  }
+
+  if (anim.phase === "shot"){
+    const q = easeOut(p);
+    ball.x = anim.from.x + (anim.to2.x - anim.from.x) * q;
+    ball.y = anim.from.y + (anim.to2.y - anim.from.y) * q;
+    ball.z = Math.sin(Math.PI * q) * anim.arc2;
+    pushTrail();
+    if (p >= 1){
+      if (anim.runs > 0 && !anim.battersSwapped){
+        anim.phase = "running"; anim.t = 0; anim.dur = 480 * Math.min(3, anim.runs);
+        runPhase = 0;
+      } else {
+        anim.phase = "idle";
+        ball.visible = false;
+        bowler.x = 960;
+      }
+    }
+    return;
+  }
+
+  if (anim.phase === "running"){
+    runPhase += dt / 260;
+    if (p >= 1){
+      anim.battersSwapped = true;
+      anim.phase = "idle";
+      ball.visible = false;
+      bowler.x = 960;
+      FIELDERS.forEach(f => { f.react = 0; });
+    }
+    return;
+  }
+}
+
+let runPhase = 0;
+function updateFielders(dt){
+  FIELDERS.forEach(f => {
+    let tx = f.hx, ty = f.hy;
+    if (anim.phase === "shot" || anim.phase === "running"){
+      if (f === anim.chaseFielder && anim.to2){
+        const d = Math.hypot(f.hx - anim.to2.x, f.hy - anim.to2.y);
+        const k = Math.min(.72, 260 / Math.max(60, d));
+        tx = f.hx + (anim.to2.x - f.hx) * k;
+        ty = f.hy + (anim.to2.y - f.hy) * k;
+        f.react = 1;
+      } else if (f.react > 0){
+        const dx = anim.to2 ? (anim.to2.x - f.hx) : 0;
+        const dy = anim.to2 ? (anim.to2.y - f.hy) : 0;
+        const dd = Math.max(1, Math.hypot(dx,dy));
+        tx = f.hx + (dx/dd) * 26 * f.react;
+        ty = f.hy + (dy/dd) * 26 * f.react;
+      }
+    }
+    f.x += (tx - f.x) * Math.min(1, dt/150);
+    f.y += (ty - f.y) * Math.min(1, dt/150);
+    if (anim.phase === "idle") f.react *= 0.92;
+  });
+}
+
+function pushTrail(){
+  ball.trail.push({ x: ball.x, y: ball.y - ball.z });
+  if (ball.trail.length > 16) ball.trail.shift();
+}
+
+function drawBall(){
+  if (!ball.visible) return;
+  const c = ctx;
+  // trail
+  for (let i=0;i<ball.trail.length;i++){
+    const t = ball.trail[i], a = i / ball.trail.length;
+    c.fillStyle = "rgba(255,255,255," + (a*0.30).toFixed(3) + ")";
+    c.beginPath(); c.arc(t.x, t.y, 2 + a*4, 0, Math.PI*2); c.fill();
+  }
+  // shadow
+  c.fillStyle = "rgba(0,0,0,.35)";
+  c.beginPath(); c.ellipse(ball.x, ball.y + 4, 8, 3.4, 0, 0, Math.PI*2); c.fill();
+  // ball
+  const y = ball.y - ball.z;
+  const g = c.createRadialGradient(ball.x-2.5, y-2.5, 1, ball.x, y, 8);
+  g.addColorStop(0,"#fff"); g.addColorStop(.55,"#f2f0ea"); g.addColorStop(1,"#b9b3a4");
+  c.fillStyle = g;
+  c.beginPath(); c.arc(ball.x, y, 7.5, 0, Math.PI*2); c.fill();
+  c.strokeStyle = "#c2372f"; c.lineWidth = 1.6;
+  c.beginPath(); c.arc(ball.x - 2, y, 7.5, -0.9, 0.9); c.stroke();
+}
+
+function drawFielders(){
+  FIELDERS.forEach(f => {
+    drawPlayer(ctx, f, { color:"#e8eef5", skin:"#e8b98d", scale:.9 });
+  });
+}
+
+function drawBowler(){
+  const swing = (anim.phase === "runup") ? (anim.t / anim.dur) * 1.1 : 0;
+  drawPlayer(ctx, bowler, { color:"#0a8f4b", bowlArm: swing, scale:1, nameCol:"#cfe8d9" });
+}
+
+function drawBatsmen(){
+  // swap animation
+  let sx = striker.x, sy = striker.y, nx = nonStriker.x, ny = nonStriker.y;
+  if (anim.phase === "running"){
+    const m = Math.abs(Math.sin(runPhase * Math.PI));
+    const k = Math.floor(runPhase);
+    const cur = (k % 2 === 0) ? m : 1 - m;
+    sx = striker.x + (nonStriker.x - striker.x) * cur;
+    sy = striker.y + (nonStriker.y - striker.y) * cur;
+    nx = nonStriker.x + (striker.x - nonStriker.x) * cur;
+    ny = nonStriker.y + (striker.y - nonStriker.y) * cur;
+  }
+  drawPlayer(ctx, { x:nx, y:ny, num:nonStriker.num, name:nonStriker.name },
+    { color:"#0a4bd6", bat:true, helmet:true, legs: runPhase*2.4, scale:1.05 });
+  drawPlayer(ctx, { x:sx, y:sy, num:striker.num, name:striker.name },
+    { color:"#0a4bd6", bat:true, helmet:true, legs: runPhase*2.4 + 1,
+      batAng: (anim.showBatSwing ? -0.9 + anim.showBatSwing*1.2 : 0.35), scale:1.05 });
+  if (anim.phase !== "running") runPhase = 0;
+}
+
+function drawUmpireKeeper(){
+  drawPlayer(ctx, keeper, { color:"#123024", skin:"#e8b98d", scale:.92, nameCol:"#bcd6e8" });
+  drawPlayer(ctx, umpire, { color:"#1b2740", skin:"#e8b98d", scale:.9, nameCol:"#bcd6e8" });
+}
+
+requestAnimationFrame(loop);
+
+/* ==========================================================================
+   7. DOM RENDERING
+   ========================================================================== */
+const $ = id => document.getElementById(id);
+
+function oversText(balls){ return Math.floor(balls/6) + "." + (balls%6); }
+function ballsFig(balls){ return Math.floor(balls/6) + "." + (balls%6); }
+
+function renderAll(){
+  // header
+  $("mTitle").textContent = S.match.title;
+  $("mSub").textContent = S.match.format + " · " + S.match.venue + " · " + S.match.innings;
+  $("hTarget").textContent = S.match.chase ? S.target : "—";
+
+  const b = S.batting;
+  const oversDone = b.balls / 6;
+  // Prefer the server-computed rates; fall back to local maths in demo mode.
+  const crr  = (typeof S.crr === "number" && S.crr > 0) ? S.crr
+             : (oversDone > 0 ? (b.score / oversDone) : 0);
+  $("hCrr").textContent = crr.toFixed(2);
+
+  if (S.match.chase){
+    const need = (typeof S.need === "number") ? S.need : Math.max(0, S.target - b.score);
+    const left = (typeof S.ballsLeft === "number") ? S.ballsLeft
+               : Math.max(0, b.maxOvers*6 - b.balls);
+    const rrr  = (typeof S.rrr === "number" && S.rrr > 0) ? S.rrr
+               : (left > 0 ? (need / (left/6)) : 0);
+    $("hRrr").textContent  = rrr.toFixed(2);
+    $("hNeed").textContent = need + " off " + left;
+  } else {
+    $("hRrr").textContent = "—"; $("hNeed").textContent = "—";
+  }
+
+  // scorebar
+  $("teamChip").style.background = b.color;
+  $("sTeam").textContent = b.code;
+  $("sScore").textContent = b.score;
+  $("sWkts").textContent = "-" + b.wkts;
+  $("sOvers").textContent = "(" + oversText(b.balls) + ")";
+
+  $("sBat1").innerHTML = S.striker.name + " <b>" + S.striker.runs + "</b>(" + S.striker.balls + ")";
+  $("sBat2").innerHTML = S.nonStriker.name + " <b>" + S.nonStriker.runs + "</b>(" + S.nonStriker.balls + ")";
+  $("sBowl").innerHTML = S.bowler.name + " <b>" + ballsFig(S.bowler.balls) + "-" +
+                          S.bowler.md + "-" + S.bowler.runs + "-" + S.bowler.wkts + "</b>";
+  const econ = S.bowler.balls > 0 ? (S.bowler.runs / (S.bowler.balls/6)) : 0;
+  const ovRuns = S.thisOver.reduce((a,x) => a + (x === "W" ? 0 : (isNaN(+x) ? 1 : +x)), 0);
+  $("sEcon").innerHTML = "Economy <b>" + econ.toFixed(2) + "</b> · This over <b>" + ovRuns + "</b>";
+  $("sLast10").textContent = S.last10;
+
+  renderBalls("thisOver", S.thisOver);
+  renderBalls("lastOver", S.lastOver);
+}
+
+function ballClass(x){
+  if (x === "W") return "bW";
+  if (x === "wd" || x === "nb" || x === "lb") return "bwd";
+  const n = parseInt(x,10);
+  if (isNaN(n)) return "b0";
+  return "b" + Math.min(6, n);
+}
+function renderBalls(el, arr){
+  const host = $(el);
+  host.innerHTML = "";
+  arr.slice(0,6).forEach(x => {
+    const d = document.createElement("div");
+    d.className = "ball " + ballClass(x);
+    d.textContent = x;
+    host.appendChild(d);
+  });
+  for (let i = arr.length; i < 6; i++){
+    const d = document.createElement("div");
+    d.className = "ball b0";
+    d.style.opacity = ".3";
+    d.textContent = "•";
+    host.appendChild(d);
+  }
+}
+
+function setCommentary(hi, en){
+  if (hi){ S.commentary_hi = hi; S.commentary_en = en || ""; }
+  const el = $("comm");
+  el.innerHTML = esc(S.commentary_hi) +
+    (S.commentary_en ? ' <span class="en">· ' + esc(S.commentary_en) + '</span>' : "");
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, m =>
+  ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[m])); }
+
+/* --- Flash --- */
+let flashTimer = null;
+function showFlash(txt, color, sub){
+  const f = $("flash");
+  $("flashTxt").textContent = txt;
+  $("flashTxt").style.color = color;
+  $("flashSub").textContent = sub || "";
+  f.classList.remove("show"); void f.offsetWidth; f.classList.add("show");
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => f.classList.remove("show"), 1750);
+}
+
+/* --- Over summary card --- */
+let cardTimer = null;
+function showOverCard(o){
+  $("ocTitle").textContent = "OVER " + o.over + " — SUMMARY";
+  $("ocRuns").textContent  = o.runs;
+  const tl = $("ocTimeline");
+  tl.innerHTML = "";
+  o.timeline.forEach((x,i) => {
+    const d = document.createElement("div");
+    d.className = "tl " + (x === "W" ? "bW" : "b" + Math.min(6, parseInt(x,10) || 0));
+    d.textContent = x;
+    d.style.animation = "popIn .4s cubic-bezier(.2,1.5,.4,1) " + (i*0.07) + "s backwards";
+    tl.appendChild(d);
+  });
+  $("ocBowler").textContent = S.bowler.name;
+  $("ocBowlerFig").textContent = ballsFig(S.bowler.balls) + "-" + S.bowler.md + "-" +
+                                 S.bowler.runs + "-" + S.bowler.wkts;
+  $("ocBat1").textContent = S.striker.name;
+  $("ocBat1Fig").textContent = S.striker.runs + " (" + S.striker.balls + ")";
+  $("ocBat2").textContent = S.nonStriker.name;
+  $("ocBat2Fig").textContent = S.nonStriker.runs + " (" + S.nonStriker.balls + ")";
+  $("ocPart").textContent = S.partnership + " runs";
+  $("ocPartFig").textContent = S.partBalls + " balls";
+
+  $("canvasWrap").classList.add("blurred");
+  $("overCard").classList.add("show");
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => {
+    $("overCard").classList.remove("show");
+    $("canvasWrap").classList.remove("blurred");
+  }, 8000);
+}
+
+/* --- Viewers counter --- */
+setInterval(() => {
+  S.viewers += Math.floor((Math.random() - 0.42) * 90);
+  if (S.viewers < 800) S.viewers = 800;
+  $("hViewers").textContent = S.viewers.toLocaleString("en-US");
+}, 2200);
+
+/* ==========================================================================
+   8. AUDIO ENGINE  (browser-side: TTS playback + BGM + SFX + auto-ducking)
+   --------------------------------------------------------------------------
+   The Python backend only *creates* MP3s (edge-tts). Everything audible
+   happens here, which is why no virtual sound card is needed on the server.
+
+   DUCKING: background music sits at 100% (bgmBase). The moment a Hindi
+   commentary clip or a sound effect starts, BGM drops to 20% within 120 ms
+   and eases back to 100% when it finishes.
+   ========================================================================== */
+const Audio_ = {
+  started:false, on:false, ctx:null,
+  master:null, bgmGain:null, sfxGain:null, voiceGain:null, ambGain:null,
+  bgmEl:null, bgmBase:0.30, ducked:false, duckDepth:0.20,
+  assets:{ bgm:[], sfx:{}, tts:false },
+  voiceEl:null, queue:[], speaking:false, unlockTimer:null
+};
+
+function initAudio(){
+  if (Audio_.started) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const ac = new AC();
+  Audio_.ctx = ac; Audio_.started = true;
+
+  Audio_.master = ac.createGain(); Audio_.master.gain.value = 0.95;
+  Audio_.master.connect(ac.destination);
+
+  Audio_.bgmGain   = ac.createGain(); Audio_.bgmGain.gain.value = Audio_.bgmBase;
+  Audio_.bgmGain.connect(Audio_.master);
+
+  Audio_.sfxGain   = ac.createGain(); Audio_.sfxGain.gain.value   = 0.9;
+  Audio_.voiceGain = ac.createGain(); Audio_.voiceGain.gain.value = 1.0;
+  Audio_.sfxGain.connect(Audio_.master);
+  Audio_.voiceGain.connect(Audio_.master);
+
+  // ---- background music (real file if the server has one) -----------------
+  if (Audio_.assets.bgm && Audio_.assets.bgm.length){
+    const el = new Audio(Audio_.assets.bgm[0]);
+    el.loop = true; el.preload = "auto"; el.volume = 1.0;
+    try {
+      const src = ac.createMediaElementSource(el);
+      src.connect(Audio_.bgmGain);
+      Audio_.bgmEl = el;
+    } catch(e){ console.warn("bgm routing failed", e); }
+  } else {
+    startAmbience(ac);          // synthesised stadium bed as a fallback
+  }
+
+  // ---- Hindi commentary player --------------------------------------------
+  const v = new Audio();
+  v.preload = "auto";
+  try {
+    const vsrc = ac.createMediaElementSource(v);
+    vsrc.connect(Audio_.voiceGain);
+  } catch(e){ /* playback still works, just without ducking */ }
+  v.addEventListener("ended", () => { Audio_.speaking = false; unduck(700); nextVoice(); });
+  v.addEventListener("error", () => { Audio_.speaking = false; unduck(400); nextVoice(); });
+  Audio_.voiceEl = v;
+}
+
+/* Synthesised crowd bed — used only when no bgm mp3 is uploaded */
+function startAmbience(ac){
+  if (Audio_.ambGain) return;
+  const len = Math.floor(ac.sampleRate * 4);
+  const buf = ac.createBuffer(1, len, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  let lastV = 0;
+  for (let i=0;i<len;i++){
+    const white = Math.random()*2 - 1;
+    lastV = (lastV + 0.02*white) / 1.02;
+    d[i] = lastV * 3.0;
+  }
+  const src = ac.createBufferSource(); src.buffer = buf; src.loop = true;
+  const lp = ac.createBiquadFilter(); lp.type="lowpass";  lp.frequency.value=900;
+  const hp = ac.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=120;
+  const g  = ac.createGain(); g.gain.value = 0.10;
+  src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(Audio_.bgmGain);
+  src.start();
+  Audio_.ambGain = g;
+}
+
+/* --------------------------- ducking -------------------------------------- */
+function duck(holdMs){
+  if (!Audio_.on || !Audio_.bgmGain) return;
+  const g = Audio_.bgmGain.gain, t = Audio_.ctx.currentTime, base = Audio_.bgmBase;
+  Audio_.ducked = true;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(Math.max(0.0001, g.value), t);
+  g.linearRampToValueAtTime(base * Audio_.duckDepth, t + 0.12);      // -> 20%
+  g.setValueAtTime(base * Audio_.duckDepth, t + Math.max(0.2, (holdMs||1200)/1000));
+  g.linearRampToValueAtTime(base, t + Math.max(0.2,(holdMs||1200)/1000) + 0.75); // -> 100%
+}
+function unduck(ms){
+  if (!Audio_.bgmGain) return;
+  const g = Audio_.bgmGain.gain, t = Audio_.ctx.currentTime;
+  Audio_.ducked = false;
+  g.cancelScheduledValues(t);
+  g.setValueAtTime(g.value, t);
+  g.linearRampToValueAtTime(Audio_.bgmBase, t + (ms||600)/1000);
+}
+
+/* --------------------------- SFX ------------------------------------------ */
+const SFX_FILES = { six:["six","cheer"], four:["four","cheer"], wicket:["wicket","whistle"] };
+function sfx(ev){
+  if (!Audio_.on) return;
+  const want = SFX_FILES[ev] || [];
+  let url = null;
+  for (const n of want){ if (Audio_.assets.sfx[n]) { url = Audio_.assets.sfx[n]; break; } }
+  if (url){
+    const a = new Audio(url);
+    a.volume = 0.85;
+    try { Audio_.ctx.createMediaElementSource(a).connect(Audio_.sfxGain); } catch(e){}
+    a.play().catch(()=>{});
+    duck(1300);
+    setTimeout(()=>{ if (!Audio_.speaking) unduck(600); }, 1500);
+    return;
+  }
+  synthSfx(ev);                       // no asset uploaded -> synthesise
+}
+
+function synthSfx(ev){
+  if (!Audio_.on || !Audio_.ctx) return;
+  const ac = Audio_.ctx;
+  function tone(freq,dur,type,vol,when){
+    const t = ac.currentTime + (when||0);
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type||"sine"; o.frequency.setValueAtTime(freq,t);
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol||0.25,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    o.connect(g); g.connect(Audio_.sfxGain); o.start(t); o.stop(t+dur+0.05);
+  }
+  function noise(dur,f0,f1,vol){
+    const t = ac.currentTime, len = Math.floor(ac.sampleRate*dur);
+    const buf = ac.createBuffer(1,len,ac.sampleRate), d = buf.getChannelData(0);
+    for (let i=0;i<len;i++) d[i] = (Math.random()*2-1)*(1-i/len);
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const bp = ac.createBiquadFilter(); bp.type="bandpass"; bp.Q.value=1.1;
+    bp.frequency.setValueAtTime(f0,t);
+    bp.frequency.exponentialRampToValueAtTime(f1,t+dur);
+    const g = ac.createGain(); g.gain.value = vol||0.35;
+    src.connect(bp); bp.connect(g); g.connect(Audio_.sfxGain); src.start(t);
+  }
+  if (ev === "six"){ noise(0.18,2600,700,.5); setTimeout(()=>tone(1200,.5,"square",.12),60);
+                     setTimeout(()=>noise(1.5,700,260,.35),200); }
+  else if (ev === "four"){ noise(0.15,2200,800,.45);
+                     setTimeout(()=>{tone(2100,.18,"square",.10);tone(2600,.18,"square",.09,0.16);},80);
+                     setTimeout(()=>noise(1.0,600,260,.28),220); }
+  else if (ev === "wicket"){ tone(2600,.14,"square",.14); tone(3200,.14,"square",.13,0.18);
+                     setTimeout(()=>noise(1.6,900,200,.38),220); }
+  else { noise(0.09,1800,900,.18); }
+  duck(1200);
+}
+
+/* --------------------------- Hindi TTS queue ------------------------------ */
+function speakUrl(url, text){
+  if (!url) return;
+  Audio_.queue.push({url:url, text:text});
+  setCommentary(text || S.commentary_hi, S.commentary_en);
+  if (!Audio_.speaking) nextVoice();
+}
+function nextVoice(){
+  const item = Audio_.queue.shift();
+  if (!item){ Audio_.speaking = false; return; }
+  if (Audio_.queue.length > 3) Audio_.queue.splice(0, Audio_.queue.length - 3); // never lag behind
+  Audio_.speaking = true;
+  const v = Audio_.voiceEl;
+  if (!v){ Audio_.speaking = false; return; }
+  v.src = item.url;
+  duck(1400);
+  const p = v.play();
+  if (p && p.catch) p.catch(()=>{ Audio_.speaking=false; unduck(400); setTimeout(nextVoice,120); });
+}
+
+/* Fallback: device TTS when the server has no edge-tts */
+function speakFallback(text){
+  if (!text || !window.speechSynthesis) return;
+  try {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "hi-IN"; u.rate = 1.08; u.pitch = 1.05;
+    const vs = window.speechSynthesis.getVoices();
+    for (const v of vs){ if (/hi[-_]IN/i.test(v.lang)){ u.voice = v; break; } }
+    u.onstart = () => duck(1500);
+    u.onend   = () => unduck(700);
+    window.speechSynthesis.speak(u);
+  } catch(e){}
+}
+
+/* ==========================================================================
+   9b. AUDIO UNLOCK GATE  (required on Android / tablet)
+   ========================================================================== */
+const AUTO_START = /[?&]auto=1/.test(location.search);
+let gateDone = false;
+
+function startAll(){
+  if (gateDone) return;
+  gateDone = true;
+  initAudio();
+  Audio_.on = true;
+  if (Audio_.ctx && Audio_.ctx.state === "suspended") Audio_.ctx.resume();
+  if (Audio_.bgmEl){ Audio_.bgmEl.play().catch(()=>{}); }
+  updateAssetPills();
+  const g = $("gate");
+  g.classList.add("hide");
+  setTimeout(() => { g.style.display = "none"; }, 600);
+  setTimeout(() => $("help").classList.add("hide"), 6000);
+}
+$("gate").addEventListener("click", startAll);
+$("gate").addEventListener("touchstart", startAll, { passive:true });
+if (AUTO_START) startAll();
+
+/* ==========================================================================
+   10. LIVE MODE (REST bootstrap + WebSocket) and DEMO FALLBACK
+   ========================================================================== */
+let ws = null, live = false, demoTimer = null, hasServer = false;
+
+function wsUrl(){
+  const proto = location.protocol === "https:" ? "wss://" : "ws://";
+  return proto + (location.host || "localhost:8080") + "/ws";
+}
+
+async function bootstrap(){
+  try {
+    const r = await fetch("api/state", {cache:"no-store"});
+    if (!r.ok) throw new Error("state " + r.status);
+    const st = await r.json();
+    if (st && st.match){
+      hasServer = true;
+      applyState(st);
+      setCommentary(st.commentary_hi, st.commentary_en);
+      LOG_OK(" Bootstrap state loaded from server");
+    }
+  } catch(e){ LOG_OK(" No REST state (demo/offline mode)"); }
+  connectWS();
+}
+
+function LOG_OK(m){ if (window.console) console.log("[overlay]" + m); }
+
+function connectWS(){
+  if (location.protocol === "file:"){ startDemo(); return; }
+  try { ws = new WebSocket(wsUrl()); } catch(e){ startDemo(); return; }
+
+  ws.onopen = () => {
+    live = true; stopDemo(); hasServer = true;
+    $("statusTxt").textContent = "LIVE";
+    $("status").classList.add("liveC");
+    $("pMode").textContent = "LIVE MODE";
+    $("pMode").style.background = "#e8112d";
+  };
+  ws.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch(err){ return; }
+    handleMessage(m);
+  };
+  ws.onerror = () => {};
+  ws.onclose = () => {
+    live = false;
+    $("statusTxt").textContent = "OFFLINE";
+    $("status").classList.remove("liveC");
+    $("pMode").textContent = "RECONNECTING";
+    setTimeout(connectWS, 4000);
+  };
+}
+
+function handleMessage(m){
+  switch (m.type){
+    case "hello":
+      Audio_.assets = m.payload.assets || Audio_.assets;
+      applyBranding(m.payload.branding);
+      if (m.payload.state && m.payload.state.match) applyState(m.payload.state);
+      updateAssetPills();
+      break;
+    case "state":
+      applyState(m.payload);
+      break;
+    case "ball":
+      playBall(m.payload);
+      break;
+    case "tts":
+      if (Audio_.on && Audio_.started) speakUrl(m.payload.url, m.payload.text);
+      else setCommentary(m.payload.text || "", "");
+      break;
+    case "sfx":
+      sfx(m.payload.name === "four" ? "four" : m.payload.name === "six" ? "six" : "wicket");
+      break;
+    case "over_end":
+      showOverCard(m.payload);
+      setCommentary(m.payload.text_hi || "", "");
+      break;
+    case "status":
+      $("pMode").textContent = (m.payload.mode || "live").toUpperCase() + " MODE";
+      if (m.payload.mode === "rehearse") $("pMode").style.background = "#b8530a";
+      break;
+  }
+}
+
+/* Merge a server snapshot into the local render state */
+function applyState(st){
+  if (!st || !st.match) return;
+  if (st.branding) applyBranding(st.branding);
+  if (st.match)    Object.assign(S.match, st.match);
+  if (st.batting)  Object.assign(S.batting, st.batting);
+  if (st.bowling)  S.bowling = st.bowling;
+  if (st.striker)     S.striker    = st.striker;
+  if (st.nonStriker)  S.nonStriker = st.nonStriker;
+  if (st.bowler)      S.bowler     = st.bowler;
+  if (st.thisOver) S.thisOver = st.thisOver.slice(0,6);
+  if (st.lastOver) S.lastOver = st.lastOver.slice(0,6);
+  if (typeof st.target === "number")  S.target  = st.target;
+  if (typeof st.crr === "number")     S.crr     = st.crr;
+  if (typeof st.rrr === "number")     S.rrr     = st.rrr;
+  if (typeof st.need === "number")    S.need    = st.need;
+  if (typeof st.ballsLeft === "number") S.ballsLeft = st.ballsLeft;
+  if (typeof st.partnership === "number") S.partnership = st.partnership;
+  if (st.commentary_hi) S.commentary_hi = st.commentary_hi;
+  if (st.commentary_en) S.commentary_en = st.commentary_en;
+
+  // keep the canvas jerseys in sync with the real players
+  if (S.striker){    striker.name    = shortName(S.striker.name);    striker.num = S.striker.num || 0; }
+  if (S.nonStriker){ nonStriker.name = shortName(S.nonStriker.name); nonStriker.num = S.nonStriker.num || 0; }
+  if (S.bowler){     bowler.name     = shortName(S.bowler.name);     bowler.num = S.bowler.num || 0; }
+
+  if (S.batting && S.batting.color) document.getElementById("teamChip").style.background = S.batting.color;
+  renderAll();
+  if (st.commentary_hi) setCommentary(st.commentary_hi, st.commentary_en);
+}
+
+/* Your channel branding comes from config.yaml -> branding: */
+function applyBranding(b){
+  if (!b) return;
+  if (b.accent){
+    document.documentElement.style.setProperty("--accent", b.accent);
+    const m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute("content", b.accent);
+  }
+  if (b.channel){ const e = document.querySelector("#brand .chan");   if (e) e.textContent = b.channel; }
+  if (b.handle){  const e = document.querySelector("#brand .handle");  if (e) e.textContent = b.handle; }
+  if (b.logo){    const e = document.querySelector("#brand .logo");    if (e) e.textContent = b.logo; }
+  if (b.tagline){ const e = document.querySelector(".brand-tag");      if (e) e.textContent = b.tagline; }
+}
+
+function shortName(n){
+  const p = String(n || "").trim().split(/\s+/);
+  return (p.length > 1 ? p[p.length - 1] : (p[0] || "")).slice(0, 9).toUpperCase();
+}
+
+function updateAssetPills(){
+  const a = Audio_.assets || {};
+  const nBgm = (a.bgm || []).length, nSfx = Object.keys(a.sfx || {}).length;
+  $("pSound").textContent = Audio_.on
+    ? ("SOUND ON · BGM " + nBgm + " · SFX " + nSfx)
+    : ("SOUND OFF · BGM " + nBgm + " · SFX " + nSfx);
+}
+
+/* --- Demo simulator --- */
+const DEMO_SEQUENCE = [0,1,4,0,6,2,1,0,"W",4,1,6,0,2,1,4,0,0,6,1];
+let di = 0;
+function startDemo(){
+  if (demoTimer) return;
+  $("pMode").textContent = "DEMO MODE";
+  $("statusTxt").textContent = "DEMO";
+  const tick = () => {
+    const v = DEMO_SEQUENCE[di % DEMO_SEQUENCE.length]; di++;
+    if (v === "W"){
+      const c = pick(DEMO_COMMENTARY.WICKET);
+      playBall({ runs:0, wicket:true, event:"WICKET", shot:"SHOT_DRIVE",
+                 text_hi:c[0], text_en:c[1] });
+      // reset to a new batter (demo)
+      setTimeout(() => {
+        S.striker = { name:pick(["S IYER","R SHARMA","H PANDYA","S GILL"]),
+                      num:pick([41,45,33,77]), runs:0, balls:0, fours:0, sixes:0 };
+        striker.name = S.striker.name.split(" ").slice(-1)[0].toUpperCase();
+        striker.num  = S.striker.num;
+        S.partnership = 0; S.partBalls = 0;
+        renderAll();
+      }, 2200);
+    } else {
+      const ev = eventFromRuns(v, false);
+      const c = pick(DEMO_COMMENTARY[ev] || DEMO_COMMENTARY.DOT);
+      playBall({ runs:v, wicket:false, event:ev, text_hi:c[0], text_en:c[1] });
+    }
+    demoTimer = setTimeout(tick, 3600 + Math.random()*900);
+  };
+  demoTimer = setTimeout(tick, 900);
+}
+function stopDemo(){ clearTimeout(demoTimer); demoTimer = null; }
+
+/* --- boot --- */
+renderAll();
+setCommentary(S.commentary_hi, S.commentary_en);
+if (location.protocol === "file:") {
+  startDemo();                       // opened straight from disk -> self-contained demo
+} else {
+  bootstrap();                       // served by main.py -> REST + WebSocket
+  setTimeout(() => { if (!live) { LOG_OK(" server not reachable -> demo"); startDemo(); } }, 4000);
+}
+setTimeout(() => $("help").classList.add("hide"), 8000);
+</script>
+</body>
+</html>
