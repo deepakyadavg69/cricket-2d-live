@@ -126,6 +126,8 @@ class TelegramBot:
 
     async def handle(self, payload: dict):
         """Telegram se aaya update. Kabhi exception bahar nahi jane dena."""
+        if not self.enabled:
+            return                      # bot band -> bilkul kuch mat karo
         try:
             msg = payload.get("message") or payload.get("edited_message") or {}
             if not msg:

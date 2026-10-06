@@ -88,6 +88,81 @@ ENV_OVERRIDES = {
 }
 
 
+def _strip_comment(line: str) -> str:
+    """'#' se aage kaat do — par quotes ke andar wale '#' ko nahi.
+
+    (warna  accent: "#1de9b6"  ka '#' comment samajh kar rang udh jata hai)
+    """
+    q = None
+    for i, ch in enumerate(line):
+        if q:
+            if ch == q:
+                q = None
+        elif ch in ("'", '"'):
+            q = ch
+        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
+            return line[:i].rstrip()
+    return line.rstrip()
+
+
+def _mini_yaml(text: str) -> dict:
+    """Bahut chhota YAML parser — sirf utna jitna config.yaml ko chahiye.
+
+    PyYAML install na ho to bhi settings (branding, privacy, telegram) load ho
+    jayein, warna server defaults par chala jata hai. Support karta hai:
+    nested maps (indent se), "key: value", "-" wali lists, # comments.
+    """
+    root: dict = {}
+    stack = [(-1, root)]
+    for raw in text.splitlines():
+        line = _strip_comment(raw)
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        body = line.strip()
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
+        parent = stack[-1][1] if stack else root
+        if body.startswith("- "):
+            if isinstance(parent, list):
+                parent.append(_scalar(body[2:].strip()))
+            continue
+        if ":" not in body:
+            continue
+        key, _, val = body.partition(":")
+        key, val = key.strip(), val.strip()
+        if val == "":
+            child: dict = {}
+            parent[key] = child
+            stack.append((indent, child))
+        else:
+            parent[key] = _scalar(val)
+    return root
+
+
+def _scalar(v: str):
+    v = v.strip()
+    if v[:1] == '"' and v[-1:] == '"':
+        return v[1:-1]
+    if v[:1] == "'" and v[-1:] == "'":
+        return v[1:-1]
+    low = v.lower()
+    if low in ("true", "yes", "on"):
+        return True
+    if low in ("false", "no", "off"):
+        return False
+    if low in ("null", "~", ""):
+        return None
+    try:
+        return int(v)
+    except ValueError:
+        pass
+    try:
+        return float(v)
+    except ValueError:
+        pass
+    return v
+
 def load_config(path: str) -> dict:
     cfg = {
         "scraper": {"match_id": "auto", "series_filter": "", "poll_seconds": 5},
@@ -99,10 +174,17 @@ def load_config(path: str) -> dict:
         "telegram": {"enabled": True, "bot_token": "", "owner_chat_id": ""},
     }
     try:
-        import yaml  # type: ignore
+        try:
+            import yaml  # type: ignore
+        except Exception:                       # PyYAML na ho to apna chhota parser
+            yaml = None
+            LOG.warning("PyYAML nahi mila — apna simple parser use kar rahe hain")
 
-        with open(path, "r", encoding="utf-8") as f:
-            user = yaml.safe_load(f) or {}
+        if yaml is not None:
+            with open(path, "r", encoding="utf-8") as f:
+                user = yaml.safe_load(f) or {}
+        else:
+            user = _mini_yaml(open(path, "r", encoding="utf-8").read())
         for k, v in user.items():
             if isinstance(v, dict) and isinstance(cfg.get(k), dict):
                 cfg[k].update(v)

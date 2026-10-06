@@ -7,7 +7,10 @@
 aiohttp>=3.9.5          # async HTTP client (scraper) + HTTP/WebSocket server
 edge-tts>=6.1.9         # free Microsoft Neural TTS (hi-IN-MadhurNeural)
 PyYAML>=6.0.1           # config.yaml
-aiofiles>=23.2.1        # async file writes for TTS cache
 
+# NOTE: numpy / scipy / lameenc SIRF make_audio.py (ek baar chalne wala
+# audio generator) ke liye chahiye. Live server ko inki zaroorat NAHI,
+# isliye ye yahan nahi hain — build chhota aur fast rehta hai.
+#
 # --- optional (only if you enable LLM commentary) ---------------------------
 # openai>=1.30.0        # set commentary.llm.provider = openai in config.yaml

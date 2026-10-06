@@ -88,7 +88,10 @@ playout:
 # /revoke karke naya token le sakte ho.
 # ---------------------------------------------------------------------------
 telegram:
-  enabled: true
-  bot_token: "8910289799:AAF3bpcqUCwvNiGFplvaSXEHvQaO-1e7PKw"
-  owner_chat_id: "8820031174"
+  # BOT BAND HAI — koi network call nahi jayegi, deploy par koi asar nahi.
+  # Wapas chalu karna ho to: enabled: true, bot_token aur owner_chat_id bharein
+  # (Telegram @BotFather se token, apna chat id /start karke milta hai)
+  enabled: false
+  bot_token: ""
+  owner_chat_id: ""
   webhook_base: "https://cricket-2d-live.onrender.com"
